@@ -328,7 +328,7 @@ function App(): JSX.Element {
   return (
     <div className="min-h-screen bg-background">
       <header className="sticky top-0 z-10 bg-primary px-4 py-6 text-primary-foreground shadow-md">
-        <div className="relative mx-auto flex max-w-4xl flex-col gap-1">
+        <div className="relative mx-auto flex max-w-4xl flex-col gap-1 text-center sm:text-left">
           <button
             type="button"
             className="hidden-troubleshoot-button absolute -top-1 -right-1 text-xs text-primary-foreground/80"
@@ -337,17 +337,17 @@ function App(): JSX.Element {
           >
             Reset | रीसेट
           </button>
-          <h1 className="text-3xl font-bold tracking-tight">Bansal Lights - LED Catalog</h1>
+          <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">Bansal Lights - LED Catalog</h1>
           <p className="text-lg text-primary-foreground/90">अपने LED प्रोग्राम्स यहाँ सेव करें</p>
         </div>
       </header>
 
-      <main className="mx-auto max-w-4xl px-4 py-6 pb-16">
-        <div className="mb-6 flex gap-2 rounded-2xl bg-card p-2 shadow-sm">
+      <main className="mx-auto w-full max-w-4xl px-4 py-6 pb-20">
+        <div className="mb-6 flex flex-col gap-2 rounded-2xl bg-card p-2 shadow-sm sm:flex-row">
           <Button
             type="button"
             variant={isViewTab ? "primary" : "ghost"}
-            className="flex-1"
+            className="w-full sm:flex-1"
             onClick={() => setActiveTab("view")}
             aria-pressed={isViewTab}
           >
@@ -356,7 +356,7 @@ function App(): JSX.Element {
           <Button
             type="button"
             variant={!isViewTab ? "primary" : "ghost"}
-            className="flex-1"
+            className="w-full sm:flex-1"
             onClick={() => setActiveTab("add")}
             aria-pressed={!isViewTab}
           >
@@ -382,7 +382,7 @@ function App(): JSX.Element {
           <section>
             <h2 className="mb-4 text-2xl font-semibold">Saved Programs | सेव किए गए प्रोग्राम</h2>
             {hasPrograms ? (
-              <div className="grid gap-5 sm:grid-cols-2">
+              <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
                 {programs.map((program) => (
                   <Card key={program.id} className="flex flex-col overflow-hidden border border-border bg-card">
                     {program.photoDataUrl ? (
@@ -396,7 +396,7 @@ function App(): JSX.Element {
                         💡
                       </div>
                     )}
-                    <CardContent className="flex flex-1 flex-col gap-3 p-5">
+                    <CardContent className="flex flex-1 flex-col gap-3 p-4 sm:p-5">
                       <div>
                         <h3 className="text-xl font-semibold text-foreground">{program.name}</h3>
                         <p className="text-sm text-muted-foreground">
