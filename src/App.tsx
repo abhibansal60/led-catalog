@@ -61,6 +61,7 @@ function App(): JSX.Element {
   const [formData, setFormData] = useState<ProgramFormState>(getEmptyForm);
   const [feedback, setFeedback] = useState<FeedbackMessage | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [activeTab, setActiveTab] = useState<"view" | "add">("view");
 
   // Load any existing programs immediately.
   useEffect(() => {
@@ -225,6 +226,7 @@ function App(): JSX.Element {
         type: "success",
         message: "Program saved! प्रोग्राम सेव हो गया.",
       });
+      setActiveTab("view");
       console.log("💾 Program saved", { name: newProgram.name, id: newProgram.id });
     } catch (error) {
       console.error("❌ Saving program failed", error);
@@ -320,183 +322,209 @@ function App(): JSX.Element {
     }
   };
 
+  const isViewTab = activeTab === "view";
+  const hasPrograms = programs.length > 0;
+
   return (
-    <div className="min-h-screen bg-[hsl(var(--background))]">
-      <header className="sticky top-0 z-10 bg-bansalBlue px-4 py-6 text-white shadow-md">
+    <div className="min-h-screen bg-background">
+      <header className="sticky top-0 z-10 bg-primary px-4 py-6 text-primary-foreground shadow-md">
         <div className="relative mx-auto flex max-w-4xl flex-col gap-1">
           <button
             type="button"
-            className="hidden-troubleshoot-button absolute -top-1 -right-1 text-xs text-white/80"
+            className="hidden-troubleshoot-button absolute -top-1 -right-1 text-xs text-primary-foreground/80"
             onClick={handleClearAll}
             aria-label="Clear all data"
           >
             Reset | रीसेट
           </button>
           <h1 className="text-3xl font-bold tracking-tight">Bansal Lights - LED Catalog</h1>
-          <p className="text-lg text-white/90">अपने LED प्रोग्राम्स यहाँ सेव करें</p>
+          <p className="text-lg text-primary-foreground/90">अपने LED प्रोग्राम्स यहाँ सेव करें</p>
         </div>
       </header>
 
       <main className="mx-auto max-w-4xl px-4 py-6 pb-16">
-        <Card className="mb-8 border border-secondary bg-white shadow-md">
-          <CardHeader className="flex flex-col gap-3">
-            <div className="flex items-center gap-2">
-              <PlusCircle className="h-7 w-7 text-bansalBlue" aria-hidden="true" />
-              <CardTitle>Add New Program | नया प्रोग्राम जोड़ें</CardTitle>
-            </div>
-            <CardDescription className="text-base text-slate-600">
-              LED फाइल चुनें और सेव करें। सब कुछ आपके फोन में सुरक्षित रहेगा।
-            </CardDescription>
-          </CardHeader>
+        <div className="mb-6 flex gap-2 rounded-2xl bg-card p-2 shadow-sm">
+          <Button
+            type="button"
+            variant={isViewTab ? "primary" : "ghost"}
+            className="flex-1"
+            onClick={() => setActiveTab("view")}
+            aria-pressed={isViewTab}
+          >
+            📂 View Catalog | कैटलॉग देखें
+          </Button>
+          <Button
+            type="button"
+            variant={!isViewTab ? "primary" : "ghost"}
+            className="flex-1"
+            onClick={() => setActiveTab("add")}
+            aria-pressed={!isViewTab}
+          >
+            ➕ Add New Program | नया जोड़ें
+          </Button>
+        </div>
 
-          <CardContent className="space-y-5">
-            {feedback && (
-              <div
-                className={`rounded-xl border px-4 py-3 text-base ${
-                  feedback.type === "success"
-                    ? "border-green-200 bg-green-50 text-green-900"
-                    : "border-red-200 bg-red-50 text-red-900"
-                }`}
-                role="status"
-                aria-live="polite"
-              >
-                {feedback.message}
-              </div>
-            )}
+        {feedback && (
+          <div
+            className={`mb-6 rounded-xl border px-4 py-3 text-base ${
+              feedback.type === "success"
+                ? "border-green-200 bg-green-50 text-green-900"
+                : "border-red-200 bg-red-50 text-red-900"
+            }`}
+            role="status"
+            aria-live="polite"
+          >
+            {feedback.message}
+          </div>
+        )}
 
-            <form className="flex flex-col gap-5" onSubmit={handleSubmit}>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="programName">Program Name | प्रोग्राम नाम *</Label>
-                <Input
-                  id="programName"
-                  name="programName"
-                  value={formData.programName}
-                  onChange={handleTextChange}
-                  maxLength={50}
-                  required
-                  placeholder="e.g., Shaadi Entry | शादी एंट्री"
-                />
-              </div>
-
-              <div className="flex flex-col gap-2">
-                <Label>LED File (.led) | LED फाइल (.led) *</Label>
-                <label className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center text-slate-600">
-                  <FilePlus2 className="mb-2 h-10 w-10 text-bansalBlue" aria-hidden="true" />
-                  <span className="text-base mb-1">Tap to choose LED file | LED फाइल चुनें</span>
-                  <span className="text-xs text-slate-500">Only .led files are accepted | सिर्फ .led फाइल</span>
-                  <input
-                    type="file"
-                    accept=".led"
-                    onChange={handleLedFileChange}
-                    className="sr-only"
-                  />
-                </label>
-                {formData.ledFile && (
-                  <p className="rounded-xl border border-green-200 bg-green-50 px-4 py-2 text-sm text-green-700">
-                    ✅ File ready: {formData.ledFile.name}
-                  </p>
-                )}
-              </div>
-
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="description">Description | विवरण (optional)</Label>
-                <Textarea
-                  id="description"
-                  name="description"
-                  value={formData.description}
-                  onChange={handleTextChange}
-                  maxLength={200}
-                  rows={3}
-                  placeholder="जैसे: लाल-सफेद चमकती लाइट | e.g., Red-white flashing"
-                />
-              </div>
-
-              <div className="flex flex-col gap-2">
-                <Label>Photo | फोटो (optional)</Label>
-                <label className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center text-slate-600">
-                  <ImageIcon className="mb-2 h-10 w-10 text-bansalBlue" aria-hidden="true" />
-                  <span className="text-base mb-1">Add photo | फोटो जोड़ें</span>
-                  <span className="text-xs text-slate-500">JPG/PNG, max 2MB | JPG/PNG, अधिकतम 2MB</span>
-                  <input
-                    type="file"
-                    accept="image/png, image/jpeg"
-                    onChange={handlePhotoChange}
-                    className="sr-only"
-                  />
-                </label>
-                {formData.photoFile && (
-                  <p className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-700">
-                    📷 Photo ready: {formData.photoFile.name}
-                  </p>
-                )}
-              </div>
-
-              <div className="flex flex-col gap-3 sm:flex-row">
-                <Button type="submit" disabled={isSaving}>
-                  💾 Save | सेव करें
-                </Button>
-                <Button type="button" variant="secondary" onClick={handleCancel}>
-                  ✖️ Cancel | रद्द करें
-                </Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
-
-        <section>
-          <h2 className="mb-4 text-2xl font-semibold">Saved Programs | सेव किए गए प्रोग्राम</h2>
-          {programs.length === 0 ? (
-            <Card className="border-dashed bg-white text-slate-600">
-              <CardContent className="space-y-3 py-10 text-center text-base">
-                <p className="text-xl">💡 अभी कोई प्रोग्राम सेव नहीं है।</p>
-                <p>
-                  ऊपर वाला फॉर्म भरिए और "Save | सेव करें" दबाइए। फाइल डाउनलोड करके SD कार्ड में डालें।
-                </p>
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="grid gap-5 sm:grid-cols-2">
-              {programs.map((program) => (
-                <Card key={program.id} className="flex flex-col overflow-hidden border border-slate-200">
-                  {program.photoDataUrl ? (
-                    <img
-                      src={program.photoDataUrl}
-                      alt={`${program.name} preview`}
-                      className="h-48 w-full object-cover"
-                    />
-                  ) : (
-                    <div className="flex h-48 w-full items-center justify-center bg-slate-100 text-6xl text-slate-400">
-                      💡
-                    </div>
-                  )}
-                  <CardContent className="flex flex-1 flex-col gap-3 p-5">
-                    <div>
-                      <h3 className="text-xl font-semibold text-slate-900">{program.name}</h3>
-                      <p className="text-sm text-slate-500">
-                        Added: {new Date(program.dateAdded).toLocaleString()}
-                      </p>
-                    </div>
-                    {program.description && (
-                      <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-base text-slate-700 leading-relaxed">
-                        {program.description}
-                      </p>
+        {isViewTab ? (
+          <section>
+            <h2 className="mb-4 text-2xl font-semibold">Saved Programs | सेव किए गए प्रोग्राम</h2>
+            {hasPrograms ? (
+              <div className="grid gap-5 sm:grid-cols-2">
+                {programs.map((program) => (
+                  <Card key={program.id} className="flex flex-col overflow-hidden border border-border bg-card">
+                    {program.photoDataUrl ? (
+                      <img
+                        src={program.photoDataUrl}
+                        alt={`${program.name} preview`}
+                        className="h-48 w-full object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-48 w-full items-center justify-center bg-muted text-6xl text-muted-foreground/70">
+                        💡
+                      </div>
                     )}
-                    <div className="mt-auto flex flex-col gap-3">
-                      <Button type="button" variant="success" onClick={() => handleDownload(program)}>
-                        <Download className="h-6 w-6" aria-hidden="true" />
-                        📥 Download | डाउनलोड करें
-                      </Button>
-                      <Button type="button" variant="destructive" onClick={() => handleDelete(program.id)}>
-                        <Trash2 className="h-6 w-6" aria-hidden="true" />
-                        🗑️ Delete | हटाएं
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          )}
-        </section>
+                    <CardContent className="flex flex-1 flex-col gap-3 p-5">
+                      <div>
+                        <h3 className="text-xl font-semibold text-foreground">{program.name}</h3>
+                        <p className="text-sm text-muted-foreground">
+                          Added: {new Date(program.dateAdded).toLocaleString()}
+                        </p>
+                      </div>
+                      {program.description && (
+                        <p className="rounded-xl border border-border bg-muted/40 px-3 py-2 text-base text-foreground leading-relaxed">
+                          {program.description}
+                        </p>
+                      )}
+                      <div className="mt-auto flex flex-col gap-3">
+                        <Button type="button" variant="success" onClick={() => handleDownload(program)}>
+                          <Download className="h-6 w-6" aria-hidden="true" />
+                          📥 Download | डाउनलोड करें
+                        </Button>
+                        <Button type="button" variant="destructive" onClick={() => handleDelete(program.id)}>
+                          <Trash2 className="h-6 w-6" aria-hidden="true" />
+                          🗑️ Delete | हटाएं
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            ) : (
+              <Card className="border border-dashed border-border bg-card text-muted-foreground">
+                <CardContent className="space-y-4 py-10 text-center text-base">
+                  <p className="text-xl text-foreground">💡 अभी कोई प्रोग्राम सेव नहीं है।</p>
+                  <p>
+                    नीचे वाले बटन से नया प्रोग्राम जोड़ें। फाइल डाउनलोड करके SD कार्ड में कॉपी करें।
+                  </p>
+                  <Button type="button" onClick={() => setActiveTab("add")}>
+                    ➕ Add Program | नया जोड़ें
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
+          </section>
+        ) : (
+          <Card className="border border-border bg-card shadow-md">
+            <CardHeader className="flex flex-col gap-3">
+              <div className="flex items-center gap-2">
+                <PlusCircle className="h-7 w-7 text-primary" aria-hidden="true" />
+                <CardTitle>Add New Program | नया प्रोग्राम जोड़ें</CardTitle>
+              </div>
+              <CardDescription className="text-base text-muted-foreground">
+                LED फाइल चुनें और सेव करें। सब कुछ आपके फोन में सुरक्षित रहेगा।
+              </CardDescription>
+            </CardHeader>
+
+            <CardContent className="space-y-5">
+              <form className="flex flex-col gap-5" onSubmit={handleSubmit}>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="programName">Program Name | प्रोग्राम नाम *</Label>
+                  <Input
+                    id="programName"
+                    name="programName"
+                    value={formData.programName}
+                    onChange={handleTextChange}
+                    maxLength={50}
+                    required
+                    placeholder="e.g., Shaadi Entry | शादी एंट्री"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <Label>LED File (.led) | LED फाइल (.led) *</Label>
+                  <label className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-border bg-muted/40 px-4 py-6 text-center text-muted-foreground">
+                    <FilePlus2 className="mb-2 h-10 w-10 text-primary" aria-hidden="true" />
+                    <span className="mb-1 text-base">Tap to choose LED file | LED फाइल चुनें</span>
+                    <span className="text-xs text-muted-foreground/80">
+                      Only .led files are accepted | सिर्फ .led फाइल
+                    </span>
+                    <input type="file" accept=".led" onChange={handleLedFileChange} className="sr-only" />
+                  </label>
+                  {formData.ledFile && (
+                    <p className="rounded-xl border border-green-200 bg-green-50 px-4 py-2 text-sm text-green-700">
+                      ✅ File ready: {formData.ledFile.name}
+                    </p>
+                  )}
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="description">Description | विवरण (optional)</Label>
+                  <Textarea
+                    id="description"
+                    name="description"
+                    value={formData.description}
+                    onChange={handleTextChange}
+                    maxLength={200}
+                    rows={3}
+                    placeholder="जैसे: लाल-सफेद चमकती लाइट | e.g., Red-white flashing"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <Label>Photo | फोटो (optional)</Label>
+                  <label className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-border bg-muted/40 px-4 py-6 text-center text-muted-foreground">
+                    <ImageIcon className="mb-2 h-10 w-10 text-primary" aria-hidden="true" />
+                    <span className="mb-1 text-base">Add photo | फोटो जोड़ें</span>
+                    <span className="text-xs text-muted-foreground/80">JPG/PNG, max 2MB | JPG/PNG, अधिकतम 2MB</span>
+                    <input
+                      type="file"
+                      accept="image/png, image/jpeg"
+                      onChange={handlePhotoChange}
+                      className="sr-only"
+                    />
+                  </label>
+                  {formData.photoFile && (
+                    <p className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-700">
+                      📷 Photo ready: {formData.photoFile.name}
+                    </p>
+                  )}
+                </div>
+
+                <div className="flex flex-col gap-3 sm:flex-row">
+                  <Button type="submit" disabled={isSaving}>
+                    💾 Save | सेव करें
+                  </Button>
+                  <Button type="button" variant="secondary" onClick={handleCancel}>
+                    ✖️ Cancel | रद्द करें
+                  </Button>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+        )}
       </main>
     </div>
   );

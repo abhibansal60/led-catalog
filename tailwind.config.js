@@ -47,11 +47,6 @@ export default {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
-        bansalBlue: {
-          DEFAULT: "#1d4ed8",
-          light: "#3b82f6",
-          dark: "#1e3a8a",
-        },
       },
       borderRadius: {
         lg: "var(--radius)",

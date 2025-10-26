@@ -4,16 +4,16 @@ import { cn } from "@/lib/utils";
 
 // Central place to describe button look & feel for the catalog.
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-xl text-lg font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-60 active:translate-y-[1px]",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-xl text-lg font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-60 active:translate-y-[1px] ring-offset-background",
   {
     variants: {
       variant: {
-        primary: "bg-bansalBlue text-white hover:bg-bansalBlue-light focus-visible:ring-bansalBlue",
+        primary: "bg-primary text-primary-foreground hover:bg-primary/90 focus-visible:ring-primary",
         secondary:
-          "bg-white text-bansalBlue border-2 border-bansalBlue hover:bg-bansalBlue/10 focus-visible:ring-bansalBlue",
-        success: "bg-green-600 text-white hover:bg-green-700 focus-visible:ring-green-600",
-        destructive: "bg-red-600 text-white hover:bg-red-700 focus-visible:ring-red-600",
-        ghost: "bg-transparent text-bansalBlue hover:bg-bansalBlue/10",
+          "bg-secondary text-secondary-foreground border border-border hover:bg-secondary/70 focus-visible:ring-secondary",
+        success: "bg-emerald-600 text-white hover:bg-emerald-700 focus-visible:ring-emerald-600",
+        destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90 focus-visible:ring-destructive",
+        ghost: "bg-transparent text-foreground hover:bg-muted/60 focus-visible:ring-muted",
       },
       size: {
         default: "h-14 px-6",
