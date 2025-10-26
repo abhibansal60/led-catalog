@@ -1,22 +1,61 @@
-# Agents Overview
+# Automation & Agent Runbook
 
 ## Purpose
-This document tracks the automated assistants and workflows that support the `led-catalog` project. It helps collaborators understand what each agent does, when it runs, and how to interact with it safely.
+Provide a single source of truth for every automated workflow and AI helper attached to the `led-catalog` project. Any new contributor or agent should be able to answer:
+1. What automation exists?
+2. When does it run?
+3. Which secrets or credentials does it require?
+4. How do we roll back or pause it safely?
 
-## Active Agents & Automations
-- **GitHub Actions CI** *(planned)*: Builds and deploys the app to Netlify whenever `main` receives a new commit—either from a direct push or a merged pull request.
-- **Local AI Assistant**: Assists with code changes, documentation, and developer tooling updates. All generated changes should be reviewed before merging.
+Keep this document updated whenever an agent is added, modified, or retired.
+
+---
+
+## Active Automations
+
+### GitHub Actions — Netlify Deploy
+- **Location:** `.github/workflows/deploy.yaml`
+- **Trigger:** `push` events to the `main` branch (direct pushes or merged PRs).
+- **Purpose:** Build the Vite app and publish the `dist/` output to Netlify.
+- **Secrets required:**
+  - `NETLIFY_AUTH_TOKEN` — personal access token (Netlify → User settings → Applications). Expires yearly; rotate before expiry.
+  - `NETLIFY_SITE_ID` — site UUID (Netlify dashboard → Site configuration → Site information).
+- **Steps executed:**
+  1. Checkout repository.
+  2. Install dependencies with `npm ci`.
+  3. Create a production bundle via `npm run build`.
+  4. Deploy `dist/` using `netlify/actions/netlify-deploy@v2`.
+- **Outputs:** Updated production site at `https://bansallights.netlify.app/` with release logs in both GitHub Actions and the Netlify deploy history.
+- **Rollback:** Revert or cherry-pick a previous commit to `main`, then re-run the workflow. If deployment must be paused, disable the workflow in GitHub (`Actions` tab → `Deploy to Netlify` → three dots → `Disable workflow`) and/or revoke the Netlify token.
+
+### Local / On-Demand AI Assistant
+- **Purpose:** Generate code, docs, and operational updates on request.
+- **Scope:** Advisory only; human review required before merge.
+- **Safety:** The assistant must not commit directly to `main`. All generated changes go through normal PR or push review, and sensitive tokens are never shared.
+
+---
 
 ## Operating Guidelines
-- Keep agents focused on deterministic, reproducible tasks (build, test, deploy, linting). Avoid granting production access that bypasses review.
-- Document any new automation in this file, including purpose, triggers, secrets required, and rollback steps.
-- Monitor cost-sensitive services. Prefer free-tier plans and review usage periodically to ensure the project stays within budget.
+- Automations should focus on deterministic tasks (build, lint, test, deploy). Anything non-deterministic must include human approval gates.
+- Store credentials exclusively in the GitHub Actions secrets vault. Never commit tokens or site IDs to the repo.
+- When adjusting a workflow, update this runbook with the new behavior, triggers, and rollback steps.
+- Monitor Netlify usage monthly (bandwidth and build minutes) to ensure the project stays within the free tier.
+- Prefer small, composable workflows. If a workflow grows complex, break it into dedicated jobs or files with clear ownership.
 
-## Communication & Ownership
-- Changes to automation must be reviewed by at least one maintainer.
-- Record the maintainer for each agent in this file when it is assigned. Update the list whenever responsibilities shift.
-- When disabling or replacing an agent, leave deprecation notes and clean up unused credentials or configuration files.
+---
 
-## Next Steps
-- Implement the GitHub Actions workflow referenced above and confirm the Netlify site is configured for deploy previews if needed.
-- Evaluate whether additional automation (e.g., visual regression tests, end-to-end smoke tests) would add value before expanding the agent roster.
+## Handover Checklist for New Agents
+1. Read the latest deployment logs (GitHub Actions + Netlify) to confirm the pipeline is healthy.
+2. Verify secrets have not expired (`NETLIFY_AUTH_TOKEN` shows a recent update date).
+3. Run `npm run build` locally to ensure the codebase still compiles.
+4. Update both this document and `README.md` if you modify automation logic or hosting details.
+5. Announce changes to the team (Slack/WhatsApp) so operators know the new behavior.
+
+---
+
+## Ideas Under Evaluation
+- Pull request preview deploys on Netlify using branch-based contexts.
+- Lightweight UI smoke tests (Playwright) that can run before deployment.
+- Automated dependency update bot (Renovate or Dependabot) with a weekly cadence.
+
+Document decisions here before implementing new agents so future maintainers know the rationale.

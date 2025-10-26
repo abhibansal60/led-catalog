@@ -1,96 +1,102 @@
-# Bansal Lights - LED Catalog
+# Bansal Lights LED Catalog
 
-Simple React + Tailwind PWA that lets the Bansal Lights team store, preview, download, and manage LED programs entirely in the browser (localStorage only). Works great on Android phones and laptops.
+Modern LED-program catalog for the Bansal Lights team. The app stores `.led` controller files, product photos, and bilingual notes entirely in the browser so technicians can manage their library from a phone even when offline. A production build is live at [https://bansallights.netlify.app/](https://bansallights.netlify.app/).
 
 ![Catalog walkthrough](docs/screenshot.png)
 
-## Features
-- Mobile-first single page app with big bilingual (English | हिंदी) controls and helpful emojis.
-- Built with React + TypeScript + Vite, styled with Tailwind CSS and shadcn-inspired UI components.
-- Stores program name, LED file, optional notes, and optional JPG/PNG photo offline in `localStorage`.
-- One-tap download that always delivers `00_program.led` for T-1000 / T-8000 controllers.
-- Delete with confirmation plus a hidden panic button (top-right `Reset`) to clear all data.
-- Installable PWA with offline support (service worker + manifest).
+## What You Get
+- 📱 **Mobile-first interface** with large bilingual (English | हिंदी) labels and emoji cues.
+- 💾 **Offline catalog**: LED programs live in `localStorage`; nothing is sent to a server.
+- 📥 **One-tap download** that always exports `00_program.led` for T-1000/T-8000 controllers.
+- 📷 **Optional photo & notes** to identify how a program looks on-site.
+- 🔐 **Reset switch** (hidden button) to wipe stored data if a device is being handed over.
+- 🚀 **CI-backed deployment** to Netlify on every push/merge to `main`.
 
-## Getting Started (Developers)
-1. Install Node.js 18+ and npm.
-2. Clone this repo and run `npm install`.
-3. Start the dev server with `npm run dev`.
-4. Visit the printed local URL (usually `http://localhost:5173`).
-5. Run `npm run build` for a production bundle (outputs to `dist/`).
+## Tech Stack
+| Area | Choice | Notes |
+| ---- | ------ | ----- |
+| UI | React 18 + TypeScript | SPA bootstrapped with Vite |
+| Styling | Tailwind CSS + shadcn-inspired primitives | Custom component variants live in `src/components/ui` |
+| State | React hooks + browser `localStorage` | No backend services required |
+| Tooling | Vite 5 | Handles dev server, bundling, and TypeScript |
+| Hosting | Netlify free tier | Automated by GitHub Actions workflow `deploy.yaml` |
 
-> Vite handles the TypeScript build automatically—no manual compilation step required.
+## Local Development
+1. Install Node.js 18 (or newer LTS) and npm.
+2. Clone the repo and install dependencies:
+   ```bash
+   npm install
+   ```
+3. Start the dev server:
+   ```bash
+   npm run dev
+   ```
+4. Open the printed URL (default `http://localhost:5173`). Changes hot-reload automatically.
+5. Generate a production bundle at any time with:
+   ```bash
+   npm run build
+   ```
 
-## Deploy on Netlify (5 Steps)
-1. Run `npm run build` to create the production `dist` folder.
-2. Log into Netlify and click “Add new site” → “Deploy manually”.
-3. Drag-and-drop the entire `dist` folder into the upload area.
-4. Wait for the upload to finish and note the generated Netlify URL.
-5. Open the site on your phone; tap the install/share options as needed.
+> Tip: Run `npm run build` before pushing to catch type or bundling errors locally.
 
-> Tip: If you prefer CI/CD, set `npm run build` as the build command and `dist` as the publish directory in Netlify’s settings.
+## Deployment
+### Production
+- Hosted on Netlify at `bansallights.netlify.app`.
+- Build command: `npm run build`
+- Publish directory: `dist`
+- SPA redirect handled via `netlify.toml`.
 
-## Add to Android Home Screen
-1. Open the deployed site in Chrome on your Android phone.
-2. Tap the “⋮” menu in the top-right corner.
-3. Choose “Add to Home screen” (or “Install app”).
-4. Confirm the name “Bansal Lights” and tap “Add”.
-5. Chrome will place the icon on your home screen—launch it like any other app.
+### Continuous Deployment (GitHub Actions → Netlify)
+Workflow file: `.github/workflows/deploy.yaml`
 
-## Troubleshooting
-- **Browser says storage is full:** Delete older programs from the app or press the hidden `Reset` button (top-right corner of the header) to clear local data.
-- **Download button does nothing:** Some browsers block auto-downloads. Ensure pop-ups/downloads are allowed, then try again.
-- **Photos refuse to upload:** Only JPG/PNG files up to 2 MB are accepted.
-- **Offline mode not working:** Confirm the service worker is active (Chrome → “⋮” → “Install app”). Refresh once while online so assets can be cached.
+1. Generate a Netlify personal access token (expiry: 1 year) and note the site’s ID.
+2. In the GitHub repository, add secrets:
+   - `NETLIFY_AUTH_TOKEN`: the personal access token.
+   - `NETLIFY_SITE_ID`: the site UUID from Netlify.
+3. Push to `main` (directly or via merge). The workflow:
+   - Checks out the repo.
+   - Installs dependencies with `npm ci`.
+   - Builds the production bundle.
+   - Deploys `dist/` using `netlify/actions/netlify-deploy`.
+4. Monitor the Actions tab for the “Deploy to Netlify” job. A green run equals a successful release.
 
-## User Testing Checklist
-- [ ] Can add a program with all fields filled.
-- [ ] Can add a program with only the required fields.
-- [ ] Saved programs appear in the grid on phone and laptop.
-- [ ] Download button saves a file named `00_program.led`.
-- [ ] Delete button removes a program after confirmation.
-- [ ] Reloading the browser keeps the saved programs (localStorage).
-- [ ] Works smoothly on Android phone (portrait) and on laptop.
-- [ ] App can be installed to the Android home screen and opens offline.
+To enable preview deploys for pull requests, extend the workflow with an `on: pull_request` trigger and set the Netlify deploy action’s `draft` or `deploy-message` inputs.
 
-## Project Structure
+## Testing & Quality
+- No automated tests today; rely on manual smoke testing.
+- Manual QA checklist:
+  - [ ] Add a program with all fields (file, photo, notes).
+  - [ ] Add a program with only required fields.
+  - [ ] Refresh the page and confirm saved programs persist.
+  - [ ] Download button produces `00_program.led`.
+  - [ ] Delete confirmation works.
+  - [ ] Hidden `Reset` button clears all data.
+  - [ ] App behaves correctly on Android (portrait) and desktop.
+  - [ ] Install as PWA and launch offline.
+- Watch the browser console logs for “✅/❌” messages when debugging.
+
+## File Layout
 ```
 .
-├── components.json
-├── index.html
-├── netlify.toml
-├── package.json
+├── netlify.toml                # Build command + SPA redirect for Netlify
 ├── public/
-│   ├── icons/
-│   │   ├── icon-192.png
-│   │   └── icon-512.png
-│   ├── manifest.json
-│   └── service-worker.js
+│   ├── manifest.json           # PWA metadata (name, colors, icons)
+│   └── service-worker.js       # Caches static assets for offline support
 ├── src/
-│   ├── App.tsx
-│   ├── components/
-│   │   └── ui/
-│   │       ├── button.tsx
-│   │       ├── card.tsx
-│   │       ├── input.tsx
-│   │       ├── label.tsx
-│   │       └── textarea.tsx
-│   ├── index.css
-│   ├── lib/
-│   │   └── utils.ts
-│   ├── main.tsx
-│   └── vite-env.d.ts
-├── tailwind.config.js
-├── tsconfig.json
-├── tsconfig.node.json
-└── docs/
-    └── screenshot.png
+│   ├── App.tsx                 # Core catalog experience
+│   ├── components/ui           # Button/Card/Input/Label/Textarea primitives
+│   ├── index.css               # Tailwind base layers + custom theme tokens
+│   ├── lib/utils.ts            # Tailwind class merger
+│   └── main.tsx                # Vite bootstrap (React DOM render)
+├── tailwind.config.js          # Tailwind theme and shadcn tokens
+└── docs/screenshot.png         # Marketing/README image
 ```
 
-## Testing Notes
-- No automated tests are included (requirement: manual testing only).
-- Use the checklist above while verifying a new deployment.
-- Check the browser console (`console.log`) for action confirmations or errors.
+## Operational Notes
+- Data lives only in the user’s browser. Clearing cache or switching devices requires manual export/import.
+- Keep the Netlify token fresh. Regenerate before expiry and update the GitHub secret.
+- Monitor Netlify free-tier usage (bandwidth/build minutes) monthly; upgrade only if traffic demands it.
+- Update this README and `AGENTS.md` whenever automation or operating practices change.
 
 ## License
-MIT – modify freely for the Bansal Lights team.
+MIT – tailor it freely for the Bansal Lights team.
