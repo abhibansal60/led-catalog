@@ -20,8 +20,9 @@ jobs:
       - run: npm run build
 
       - name: Publish to Netlify
-        uses: netlify/actions/netlify-deploy@v2.0.0
+        uses: netlify/actions/cli@v2
         with:
-          authToken: ${{ secrets.NETLIFY_AUTH_TOKEN }}
-          siteId: ${{ secrets.NETLIFY_SITE_ID }}
-          buildDir: dist
+          args: deploy --dir=dist --site=$NETLIFY_SITE_ID --auth=$NETLIFY_AUTH_TOKEN --prod
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
