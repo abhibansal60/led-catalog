@@ -8,6 +8,7 @@ import {
   FolderCheck,
   FolderX,
   HardDrive,
+  Pencil,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -78,6 +79,8 @@ function App(): JSX.Element {
   const [feedback, setFeedback] = useState<FeedbackMessage | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [activeTab, setActiveTab] = useState<"view" | "add">("view");
+  const [editingProgramId, setEditingProgramId] = useState<string | null>(null);
+  const [shouldRemovePhoto, setShouldRemovePhoto] = useState(false);
   const [directoryHandle, setDirectoryHandle] = useState<FileSystemDirectoryHandle | null>(null);
   const [directoryPermission, setDirectoryPermission] = useState<PermissionState | null>(null);
   const [isFileSystemSupported, setIsFileSystemSupported] = useState(false);
@@ -157,6 +160,18 @@ function App(): JSX.Element {
       isMounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!editingProgramId) {
+      return;
+    }
+    const existingProgram = programs.find((program) => program.id === editingProgramId);
+    if (!existingProgram) {
+      setEditingProgramId(null);
+      setShouldRemovePhoto(false);
+      setFormData(getEmptyForm());
+    }
+  }, [editingProgramId, programs]);
 
   useEffect(() => {
     if (!feedback) {
@@ -375,19 +390,45 @@ function App(): JSX.Element {
       ...prev,
       photoFile: file,
     }));
+    setShouldRemovePhoto(false);
     console.log("📸 Photo ready", file.name);
   };
 
-  const handleCancel = () => {
+  const handleCancel = (source: "user" | "system" = "user") => {
+    const wasEditing = editingProgramId !== null;
     setFormData(getEmptyForm());
+    setShouldRemovePhoto(false);
+    setEditingProgramId(null);
     document.querySelectorAll<HTMLInputElement>("input[type='file']").forEach((input) => {
       input.value = "";
     });
-    console.log("↩️ Form cleared by user");
+    if (wasEditing) {
+      setActiveTab("view");
+    }
+    console.log(source === "user" ? "↩️ Form cleared by user" : "↩️ Form reset");
+  };
+
+  const handleStartEdit = (program: Program) => {
+    setFormData({
+      programName: program.name,
+      ledFile: null,
+      description: program.description ?? "",
+      photoFile: null,
+    });
+    setEditingProgramId(program.id);
+    setShouldRemovePhoto(false);
+    setActiveTab("add");
+    setFeedback(null);
+    document.querySelectorAll<HTMLInputElement>("input[type='file']").forEach((input) => {
+      input.value = "";
+    });
+    console.log("✏️ Editing program", { id: program.id });
   };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    const isEditing = editingProgramId !== null;
+
     if (!formData.programName.trim()) {
       setFeedback({
         type: "error",
@@ -395,7 +436,7 @@ function App(): JSX.Element {
       });
       return;
     }
-    if (!formData.ledFile) {
+    if (!formData.ledFile && !isEditing) {
       setFeedback({
         type: "error",
         message: "Please choose a .led file. कृपया .led फाइल चुनें.",
@@ -404,63 +445,141 @@ function App(): JSX.Element {
     }
 
     setIsSaving(true);
-    let storedFileName = "";
-    let activeDirectory: FileSystemDirectoryHandle | null = null;
+    let createdFileName: string | null = null;
+    let createdFileWasReplacement = false;
+    let targetDirectory: FileSystemDirectoryHandle | null = null;
+
     try {
-      const hasSpace = await ensureStorageCapacity(
-        formData.ledFile.size + (formData.photoFile?.size ?? 0)
-      );
-      if (!hasSpace) {
-        return;
+      if (isEditing) {
+        const programToUpdate = editingProgramId
+          ? programs.find((program) => program.id === editingProgramId)
+          : null;
+        if (!programToUpdate) {
+          throw new Error("Program to edit was not found");
+        }
+
+        if (!formData.ledFile && formData.photoFile) {
+          const hasSpaceForPhoto = await ensureStorageCapacity(formData.photoFile.size);
+          if (!hasSpaceForPhoto) {
+            return;
+          }
+        }
+
+        let updatedStoredFileName = programToUpdate.storedFileName;
+        let updatedOriginalName = programToUpdate.originalLedName;
+
+        if (formData.ledFile) {
+          const requiredBytes = formData.ledFile.size + (formData.photoFile?.size ?? 0);
+          const hasSpace = await ensureStorageCapacity(requiredBytes);
+          if (!hasSpace) {
+            return;
+          }
+
+          targetDirectory = await ensureDirectoryAccess();
+          if (!targetDirectory) {
+            return;
+          }
+
+          updatedStoredFileName = `${programToUpdate.id}-${sanitizeFileName(formData.ledFile.name)}`;
+          const fileHandle = await targetDirectory.getFileHandle(updatedStoredFileName, { create: true });
+          const writable = await fileHandle.createWritable();
+          await writable.write(formData.ledFile);
+          await writable.close();
+          createdFileName = updatedStoredFileName;
+          createdFileWasReplacement = updatedStoredFileName === programToUpdate.storedFileName;
+
+          if (updatedStoredFileName !== programToUpdate.storedFileName) {
+            try {
+              await targetDirectory.removeEntry(programToUpdate.storedFileName);
+            } catch (cleanupError) {
+              console.warn("⚠️ Could not remove old LED file during edit", cleanupError);
+            }
+          }
+
+          updatedOriginalName = formData.ledFile.name;
+        }
+
+        const updatedPhotoDataUrl = formData.photoFile
+          ? await readFileAsDataUrl(formData.photoFile)
+          : shouldRemovePhoto
+          ? null
+          : programToUpdate.photoDataUrl;
+
+        const updatedProgram: Program = {
+          ...programToUpdate,
+          name: formData.programName.trim(),
+          description: formData.description.trim(),
+          originalLedName: updatedOriginalName,
+          storedFileName: updatedStoredFileName,
+          photoDataUrl: updatedPhotoDataUrl,
+        };
+
+        await saveStoredProgram(updatedProgram);
+        setPrograms((prev) =>
+          sortPrograms(prev.map((program) => (program.id === updatedProgram.id ? updatedProgram : program)))
+        );
+        handleCancel("system");
+        setFeedback({
+          type: "success",
+          message: "Program updated. प्रोग्राम अपडेट हुआ.",
+        });
+        console.log("✏️ Program updated", { id: updatedProgram.id });
+      } else {
+        const requiredBytes = (formData.ledFile?.size ?? 0) + (formData.photoFile?.size ?? 0);
+        const hasSpace = await ensureStorageCapacity(requiredBytes);
+        if (!hasSpace) {
+          return;
+        }
+
+        targetDirectory = await ensureDirectoryAccess();
+        if (!targetDirectory) {
+          return;
+        }
+
+        const id = `${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+        const storedFileName = `${id}-${sanitizeFileName(formData.ledFile!.name)}`;
+        const fileHandle = await targetDirectory.getFileHandle(storedFileName, { create: true });
+        const writable = await fileHandle.createWritable();
+        await writable.write(formData.ledFile!);
+        await writable.close();
+        createdFileName = storedFileName;
+
+        const photoDataUrl = formData.photoFile ? await readFileAsDataUrl(formData.photoFile) : null;
+
+        const newProgram: Program = {
+          id,
+          name: formData.programName.trim(),
+          description: formData.description.trim(),
+          originalLedName: formData.ledFile!.name,
+          storedFileName,
+          photoDataUrl,
+          dateAdded: new Date().toISOString(),
+        };
+
+        await saveStoredProgram(newProgram);
+        setPrograms((prev) => sortPrograms([newProgram, ...prev]));
+        handleCancel("system");
+        setActiveTab("view");
+        setFeedback({
+          type: "success",
+          message: "Program saved! प्रोग्राम सेव हो गया.",
+        });
+        console.log("💾 Program saved", { name: newProgram.name, id: newProgram.id });
       }
-
-      activeDirectory = await ensureDirectoryAccess();
-      if (!activeDirectory) {
-        return;
-      }
-
-      const id = `${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
-      storedFileName = `${id}-${sanitizeFileName(formData.ledFile.name)}`;
-      const fileHandle = await activeDirectory.getFileHandle(storedFileName, { create: true });
-      const writable = await fileHandle.createWritable();
-      await writable.write(formData.ledFile);
-      await writable.close();
-
-      const photoDataUrl = formData.photoFile
-        ? await readFileAsDataUrl(formData.photoFile)
-        : null;
-
-      const newProgram: Program = {
-        id,
-        name: formData.programName.trim(),
-        description: formData.description.trim(),
-        originalLedName: formData.ledFile.name,
-        storedFileName,
-        photoDataUrl,
-        dateAdded: new Date().toISOString(),
-      };
-
-      await saveStoredProgram(newProgram);
-      setPrograms((prev) => sortPrograms([newProgram, ...prev]));
-      handleCancel();
-      setFeedback({
-        type: "success",
-        message: "Program saved! प्रोग्राम सेव हो गया.",
-      });
-      setActiveTab("view");
-      console.log("💾 Program saved", { name: newProgram.name, id: newProgram.id });
     } catch (error) {
-      console.error("❌ Saving program failed", error);
-      if (storedFileName && activeDirectory) {
+      console.error(isEditing ? "❌ Updating program failed" : "❌ Saving program failed", error);
+      if (createdFileName && targetDirectory && !createdFileWasReplacement) {
         try {
-          await activeDirectory.removeEntry(storedFileName);
+          await targetDirectory.removeEntry(createdFileName);
         } catch (cleanupError) {
           console.warn("⚠️ Could not clean up partial file", cleanupError);
         }
       }
       setFeedback({
         type: "error",
-        message: "Could not save program. प्रोग्राम सेव नहीं हुआ.",
+        message: isEditing
+          ? "Could not update program. प्रोग्राम अपडेट नहीं हुआ."
+          : "Could not save program. प्रोग्राम सेव नहीं हुआ.",
       });
     } finally {
       setIsSaving(false);
@@ -475,10 +594,13 @@ function App(): JSX.Element {
       }
       const fileHandle = await directory.getFileHandle(program.storedFileName, { create: false });
       const file = await fileHandle.getFile();
-      const url = window.URL.createObjectURL(file);
+      const arrayBuffer = await file.arrayBuffer();
+      const blob = new Blob([arrayBuffer], { type: "application/octet-stream" });
+      const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
       link.download = "00_program.led";
+      link.type = "application/octet-stream";
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -614,6 +736,10 @@ function App(): JSX.Element {
 
   const isViewTab = activeTab === "view";
   const hasPrograms = programs.length > 0;
+  const isEditing = editingProgramId !== null;
+  const editingProgram = isEditing
+    ? programs.find((program) => program.id === editingProgramId) ?? null
+    : null;
 
   return (
     <div className="min-h-screen bg-background">
@@ -766,6 +892,10 @@ function App(): JSX.Element {
                             Copy to SD Card | SD कार्ड में कॉपी करें
                           </span>
                         </Button>
+                        <Button type="button" variant="secondary" onClick={() => handleStartEdit(program)}>
+                          <Pencil className="h-5 w-5" aria-hidden="true" />
+                          ✏️ Edit Details | विवरण बदलें
+                        </Button>
                         <Button type="button" variant="destructive" onClick={() => handleDelete(program.id)}>
                           <Trash2 className="h-6 w-6" aria-hidden="true" />
                           🗑️ Delete | हटाएं
@@ -807,11 +937,19 @@ function App(): JSX.Element {
           <Card className="border border-border bg-card shadow-md">
             <CardHeader className="flex flex-col gap-3">
               <div className="flex items-center gap-2">
-                <PlusCircle className="h-7 w-7 text-primary" aria-hidden="true" />
-                <CardTitle>Add New Program | नया प्रोग्राम जोड़ें</CardTitle>
+                {isEditing ? (
+                  <Pencil className="h-7 w-7 text-primary" aria-hidden="true" />
+                ) : (
+                  <PlusCircle className="h-7 w-7 text-primary" aria-hidden="true" />
+                )}
+                <CardTitle>
+                  {isEditing ? "Edit Program | प्रोग्राम बदलें" : "Add New Program | नया प्रोग्राम जोड़ें"}
+                </CardTitle>
               </div>
               <CardDescription className="text-base text-muted-foreground">
-                LED फाइल चुनें और सेव करें। सब कुछ आपके फोन में सुरक्षित रहेगा।
+                {isEditing
+                  ? "Update details or add a photo. Leave fields blank to keep current values. बदलाव करें या फोटो जोड़ें।"
+                  : "LED फाइल चुनें और सेव करें। सब कुछ आपके फोन में सुरक्षित रहेगा।"}
               </CardDescription>
             </CardHeader>
 
@@ -831,15 +969,26 @@ function App(): JSX.Element {
                 </div>
 
                 <div className="flex flex-col gap-2">
-                  <Label>LED File (.led) | LED फाइल (.led) *</Label>
+                  <Label>
+                    {isEditing
+                      ? "LED File (.led) | LED फाइल (.led) (optional)"
+                      : "LED File (.led) | LED फाइल (.led) *"}
+                  </Label>
                   <label className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-border bg-muted/40 px-4 py-6 text-center text-muted-foreground">
                     <FilePlus2 className="mb-2 h-10 w-10 text-primary" aria-hidden="true" />
                     <span className="mb-1 text-base">Tap to choose LED file | LED फाइल चुनें</span>
                     <span className="text-xs text-muted-foreground/80">
-                      Only .led files are accepted | सिर्फ .led फाइल
+                      {isEditing
+                        ? "Leave blank to keep current file. वर्तमान फाइल रखने के लिए खाली छोड़ें।"
+                        : "Only .led files are accepted | सिर्फ .led फाइल"}
                     </span>
                     <input type="file" accept=".led" onChange={handleLedFileChange} className="sr-only" />
                   </label>
+                  {isEditing && editingProgram?.originalLedName && !formData.ledFile && (
+                    <p className="rounded-xl border border-border bg-muted/40 px-4 py-2 text-sm text-foreground">
+                      Current file: {editingProgram.originalLedName}
+                    </p>
+                  )}
                   {formData.ledFile && (
                     <p className="rounded-xl border border-green-200 bg-green-50 px-4 py-2 text-sm text-green-700">
                       ✅ File ready: {formData.ledFile.name}
@@ -873,6 +1022,33 @@ function App(): JSX.Element {
                       className="sr-only"
                     />
                   </label>
+                  {isEditing && editingProgram?.photoDataUrl && !shouldRemovePhoto && !formData.photoFile && (
+                    <div className="flex flex-col gap-2 rounded-xl border border-border bg-muted/40 p-3 text-sm">
+                      <span className="font-semibold text-foreground">Current photo</span>
+                      <img
+                        src={editingProgram.photoDataUrl}
+                        alt={`${editingProgram.name} current photo`}
+                        className="max-h-48 w-full rounded-lg object-cover"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="self-start text-red-600 hover:text-red-700"
+                        onClick={() => setShouldRemovePhoto(true)}
+                      >
+                        Remove photo | फोटो हटाएं
+                      </Button>
+                    </div>
+                  )}
+                  {shouldRemovePhoto && !formData.photoFile && (
+                    <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-dashed border-red-300 bg-red-50 px-4 py-2 text-sm text-red-700">
+                      <span>Photo will be removed on save. फोटो सेव करते समय हट जाएगी।</span>
+                      <Button type="button" variant="ghost" size="sm" onClick={() => setShouldRemovePhoto(false)}>
+                        Keep photo | फोटो रखें
+                      </Button>
+                    </div>
+                  )}
                   {formData.photoFile && (
                     <p className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-700">
                       📷 Photo ready: {formData.photoFile.name}
@@ -882,9 +1058,9 @@ function App(): JSX.Element {
 
                 <div className="flex flex-col gap-3 sm:flex-row">
                   <Button type="submit" disabled={isSaving}>
-                    💾 Save | सेव करें
+                    {isEditing ? "💾 Update | अपडेट करें" : "💾 Save | सेव करें"}
                   </Button>
-                  <Button type="button" variant="secondary" onClick={handleCancel}>
+                  <Button type="button" variant="secondary" onClick={() => handleCancel("user")}>
                     ✖️ Cancel | रद्द करें
                   </Button>
                 </div>

@@ -1,4 +1,4 @@
-const CACHE_NAME = "bansal-lights-cache-v1";
+const CACHE_NAME = "bansal-lights-cache-v3";
 const STATIC_ASSETS = [
   "/",
   "/index.html",
@@ -39,6 +39,30 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  if (event.request.mode === "navigate") {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          const responseClone = response.clone();
+          caches
+            .open(CACHE_NAME)
+            .then((cache) => cache.put(event.request, responseClone))
+            .catch((error) => {
+              console.error("Cache put failed for navigation request", error);
+            });
+          return response;
+        })
+        .catch(async () => {
+          const cachedPage = await caches.match(event.request);
+          if (cachedPage) {
+            return cachedPage;
+          }
+          return caches.match("/index.html");
+        })
+    );
+    return;
+  }
+
   event.respondWith(
     caches.match(event.request).then((cachedResponse) => {
       if (cachedResponse) {
@@ -61,7 +85,10 @@ self.addEventListener("fetch", (event) => {
 
           return response;
         })
-        .catch(() => caches.match("/index.html"));
+        .catch((error) => {
+          console.warn("Network request failed", error);
+          return caches.match(event.request);
+        });
     })
   );
 });
