@@ -7,6 +7,7 @@ import {
   FilePlus2,
   FolderCheck,
   FolderX,
+  HardDrive,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -25,6 +26,7 @@ import {
 } from "@/lib/storage";
 
 const MAX_PHOTO_BYTES = 2 * 1024 * 1024;
+const REFRESH_PASSWORD = "0000";
 
 export type Program = StoredProgram;
 
@@ -473,15 +475,10 @@ function App(): JSX.Element {
       }
       const fileHandle = await directory.getFileHandle(program.storedFileName, { create: false });
       const file = await fileHandle.getFile();
-      const downloadName = sanitizeFileName(
-        program.originalLedName || "program.led"
-      );
       const url = window.URL.createObjectURL(file);
       const link = document.createElement("a");
       link.href = url;
-      link.download = downloadName.endsWith(".led")
-        ? downloadName
-        : `${downloadName}.led`;
+      link.download = "00_program.led";
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -535,11 +532,58 @@ function App(): JSX.Element {
     }
   };
 
+  const handleCopyToSdCard = async (program: Program) => {
+    if (!("showDirectoryPicker" in window)) {
+      window.alert("Browser does not support direct SD card access.\nकृपया Chrome या Edge का इस्तेमाल करें।");
+      return;
+    }
+
+    try {
+      const sourceDirectory = await ensureDirectoryAccess();
+      if (!sourceDirectory) {
+        return;
+      }
+
+      const sourceFileHandle = await sourceDirectory.getFileHandle(program.storedFileName, { create: false });
+      const sourceFile = await sourceFileHandle.getFile();
+
+      const sdHandle = await window.showDirectoryPicker({ mode: "readwrite" });
+      const targetFileHandle = await sdHandle.getFileHandle("00_program.led", { create: true });
+      const writable = await targetFileHandle.createWritable();
+      await writable.write(sourceFile);
+      await writable.close();
+
+      window.alert(
+        "Copied to SD card root as 00_program.led.\nSD कार्ड में 00_program.led नाम से कॉपी हो गया।"
+      );
+      console.log("💾 Program copied to SD card", { id: program.id, directory: sdHandle.name });
+    } catch (error) {
+      console.error("❌ Copy to SD card failed", error);
+      window.alert("Could not copy to SD card. SD कार्ड में कॉपी नहीं हो पाया।");
+    }
+  };
+
   const handleClearAll = async () => {
-    const confirmed = window.confirm("Clear all saved programs?\nसब प्रोग्राम हटाने हैं?");
+    const password = window.prompt(
+      "Danger! Refresh cache will delete every saved program.\nखतरा! कैश रीफ्रेश करने से सारे प्रोग्राम हट जाएंगे।\n\nEnter password to continue."
+    );
+    if (password === null) {
+      console.log("⚠️ Cache refresh cancelled before password entry");
+      return;
+    }
+    if (password !== REFRESH_PASSWORD) {
+      window.alert("Incorrect password. गलत पासवर्ड।");
+      console.warn("⚠️ Incorrect password for cache refresh");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "This will erase the entire catalog. Are you sure?\nयह पूरा कैटलॉग हटा देगा। क्या आप पक्का हैं?"
+    );
     if (!confirmed) {
       return;
     }
+
     try {
       await clearStoredPrograms();
       if (directoryHandle && directoryPermission === "granted") {
@@ -671,8 +715,8 @@ function App(): JSX.Element {
         )}
 
         {isViewTab ? (
-          <section>
-            <h2 className="mb-4 text-2xl font-semibold">Saved Programs | सेव किए गए प्रोग्राम</h2>
+          <section className="flex flex-col gap-4">
+            <h2 className="text-2xl font-semibold">Saved Programs | सेव किए गए प्रोग्राम</h2>
             {isLoadingPrograms ? (
               <Card className="border border-dashed border-border bg-card text-muted-foreground">
                 <CardContent className="space-y-4 py-10 text-center text-base">
@@ -711,6 +755,17 @@ function App(): JSX.Element {
                           <Download className="h-6 w-6" aria-hidden="true" />
                           📥 Download | डाउनलोड करें
                         </Button>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          onClick={() => handleCopyToSdCard(program)}
+                          className="h-auto flex-wrap gap-2 whitespace-normal py-3 text-center text-base"
+                        >
+                          <HardDrive className="h-6 w-6 flex-shrink-0 text-red-500" aria-hidden="true" />
+                          <span className="leading-tight">
+                            Copy to SD Card | SD कार्ड में कॉपी करें
+                          </span>
+                        </Button>
                         <Button type="button" variant="destructive" onClick={() => handleDelete(program.id)}>
                           <Trash2 className="h-6 w-6" aria-hidden="true" />
                           🗑️ Delete | हटाएं
@@ -733,6 +788,20 @@ function App(): JSX.Element {
                 </CardContent>
               </Card>
             )}
+            <div className="mt-6 flex justify-center">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="text-red-600 hover:text-red-700 hover:bg-red-50 focus-visible:ring-red-600"
+                onClick={handleClearAll}
+                title="Delete Everything (Dangerous) | सब हटाएं"
+                aria-label="Delete everything (dangerous)"
+              >
+                <Trash2 className="h-4 w-4" aria-hidden="true" />
+                Delete Everything
+              </Button>
+            </div>
           </section>
         ) : (
           <Card className="border border-border bg-card shadow-md">
