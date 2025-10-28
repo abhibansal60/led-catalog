@@ -27,6 +27,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 import {
   clearPrograms as clearStoredPrograms,
   deleteProgram as deleteStoredProgram,
@@ -109,6 +110,37 @@ const formatFileSize = (bytes?: number | null): string => {
 
   return `${formatter.format(size)} ${units[unitIndex]}`;
 };
+
+type BilingualTextProps = {
+  primary: React.ReactNode;
+  secondary?: React.ReactNode;
+  align?: "start" | "center";
+  className?: string;
+  secondaryClassName?: string;
+};
+
+function BilingualText({
+  primary,
+  secondary,
+  align = "center",
+  className,
+  secondaryClassName,
+}: BilingualTextProps): JSX.Element {
+  return (
+    <span
+      className={cn(
+        "flex flex-col leading-tight",
+        align === "start" ? "items-start text-left" : "items-center text-center",
+        className
+      )}
+    >
+      <span>{primary}</span>
+      {secondary ? (
+        <span className={cn("text-sm font-normal text-muted-foreground", secondaryClassName)}>{secondary}</span>
+      ) : null}
+    </span>
+  );
+}
 
 function App(): JSX.Element {
   const [programs, setPrograms] = useState<Program[]>([]);
@@ -905,7 +937,7 @@ function App(): JSX.Element {
             onClick={handleClearAll}
             aria-label="Clear all data"
           >
-            Reset | रीसेट
+            Reset
           </button>
           <div className="flex flex-col gap-1">
             <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">Bansal Lights - LED Catalog</h1>
@@ -933,11 +965,17 @@ function App(): JSX.Element {
                 <FolderX className="mt-1 h-6 w-6 text-amber-600" aria-hidden="true" />
               )}
               <div className="text-sm text-foreground">
-                <p className="font-semibold">
-                  {directoryPermission === "granted"
-                    ? `Folder connected: ${directoryHandle?.name}`
-                    : "Choose a folder to store LED files | LED फाइल सेव करने का फोल्डर चुनें"}
-                </p>
+                {directoryPermission === "granted" ? (
+                  <p className="font-semibold">Folder connected: {directoryHandle?.name}</p>
+                ) : (
+                  <BilingualText
+                    primary="Choose a folder to store LED files"
+                    secondary="LED फाइल सेव करने का फोल्डर चुनें"
+                    align="start"
+                    className="font-semibold"
+                    secondaryClassName="text-xs sm:text-sm text-muted-foreground"
+                  />
+                )}
                 <p className="text-muted-foreground">
                   Files stay safely in that folder. When prompted, allow read & write access.
                 </p>
@@ -961,7 +999,19 @@ function App(): JSX.Element {
                 void ensureDirectoryAccess({ showSuccessMessage: true });
               }}
             >
-              {directoryPermission === "granted" ? "Change Folder | फोल्डर बदलें" : "Connect Folder | फोल्डर जोड़ें"}
+              {directoryPermission === "granted" ? (
+                <BilingualText
+                  primary="Change Folder"
+                  secondary="फोल्डर बदलें"
+                  secondaryClassName="text-xs text-primary/90"
+                />
+              ) : (
+                <BilingualText
+                  primary="Connect Folder"
+                  secondary="फोल्डर जोड़ें"
+                  secondaryClassName="text-xs text-primary/90"
+                />
+              )}
             </Button>
           </div>
         ) : (
@@ -974,20 +1024,22 @@ function App(): JSX.Element {
           <Button
             type="button"
             variant={isViewTab ? "primary" : "ghost"}
-            className="w-full sm:flex-1"
+            className="w-full flex-col gap-1 sm:flex-1"
             onClick={() => setActiveTab("view")}
             aria-pressed={isViewTab}
           >
-            📂 View Catalog | कैटलॉग देखें
+            <span aria-hidden="true" className="text-2xl">📂</span>
+            <BilingualText primary="View Catalog" secondary="कैटलॉग देखें" />
           </Button>
           <Button
             type="button"
             variant={!isViewTab ? "primary" : "ghost"}
-            className="w-full sm:flex-1"
+            className="w-full flex-col gap-1 sm:flex-1"
             onClick={() => setActiveTab("add")}
             aria-pressed={!isViewTab}
           >
-            ➕ Add New Program | नया जोड़ें
+            <span aria-hidden="true" className="text-2xl">➕</span>
+            <BilingualText primary="Add New Program" secondary="नया जोड़ें" />
           </Button>
         </div>
 
@@ -1010,18 +1062,21 @@ function App(): JSX.Element {
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex flex-wrap items-center justify-between gap-3 sm:justify-start">
                 <h2 className="text-2xl font-semibold">
-                  Saved Programs | सेव किए गए प्रोग्राम
+                  <BilingualText
+                    primary="Saved Programs"
+                    secondary="सेव किए गए प्रोग्राम"
+                    align="start"
+                    className="items-start"
+                  />
                 </h2>
                 <span className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-sm font-semibold text-primary">
                   <FolderOpen className="h-4 w-4" aria-hidden="true" />
-                  <span>Total Programs | कुल प्रोग्राम: {programs.length}</span>
+                  <span>Total Programs: {programs.length}</span>
                 </span>
               </div>
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
                 <div className="flex items-center gap-2">
-                  <span className="hidden text-sm font-medium text-muted-foreground sm:inline">
-                    Layout | लेआउट:
-                  </span>
+                  <span className="hidden text-sm font-medium text-muted-foreground sm:inline">Layout:</span>
                   <div className="flex gap-2">
                     <Button
                       type="button"
@@ -1051,7 +1106,7 @@ function App(): JSX.Element {
                   type="search"
                   value={searchTerm}
                   onChange={(event) => setSearchTerm(event.target.value)}
-                  placeholder="Search by name or description | नाम या विवरण से खोजें"
+                  placeholder="Search by name or description"
                   className="w-full sm:w-64"
                   aria-label="Search programs"
                 />
@@ -1080,8 +1135,8 @@ function App(): JSX.Element {
                     const sizeDisplay =
                       formattedFileSize ??
                       (directoryPermission === "granted"
-                        ? "Size unavailable. आकार उपलब्ध नहीं।"
-                        : "Connect folder to view size. फोल्डर कनेक्ट करें।");
+                        ? "Size unavailable"
+                        : "Connect folder to view size");
 
                     if (isGridView) {
                       return (
@@ -1105,15 +1160,15 @@ function App(): JSX.Element {
                               <h3 className="text-xl font-semibold text-foreground">{program.name}</h3>
                               <div className="space-y-1 text-sm text-muted-foreground">
                                 <p>
-                                  <span className="font-medium text-foreground">Uploaded | अपलोड:</span>{" "}
+                                  <span className="font-medium text-foreground">Uploaded:</span>{" "}
                                   {new Date(program.dateAdded).toLocaleString()}
                                 </p>
                                 <p>
-                                  <span className="font-medium text-foreground">File | फाइल:</span>{" "}
+                                  <span className="font-medium text-foreground">File:</span>{" "}
                                   {program.originalLedName}
                                 </p>
                                 <p>
-                                  <span className="font-medium text-foreground">Size | आकार:</span>{" "}
+                                  <span className="font-medium text-foreground">Size:</span>{" "}
                                   {sizeDisplay}
                                 </p>
                               </div>
@@ -1126,32 +1181,48 @@ function App(): JSX.Element {
                             <div className="mt-auto flex flex-col gap-3">
                               <Button
                                 type="button"
-                                variant="secondary"
+                                variant="success"
                                 onClick={() => handleCopyToSdCard(program)}
-                                className="h-auto flex-wrap gap-2 whitespace-normal py-3 text-center text-base"
+                                className="h-auto flex-wrap gap-3 whitespace-normal py-4 text-base shadow-lg shadow-emerald-200/50"
                                 disabled={isCopying}
                               >
-                                <HardDrive className="h-6 w-6 flex-shrink-0 text-red-500" aria-hidden="true" />
-                                <span className="leading-tight">
-                                  {isCopying ? "Copying… कॉपी जारी…" : "Copy to SD Card | SD कार्ड में कॉपी करें"}
-                                </span>
+                                <HardDrive className="h-6 w-6 flex-shrink-0 text-white" aria-hidden="true" />
+                                <BilingualText
+                                  primary={isCopying ? "Copying…" : "Copy to SD Card"}
+                                  secondary={isCopying ? "कॉपी जारी…" : "SD कार्ड में कॉपी करें"}
+                                  align="start"
+                                  className="gap-0.5 text-left"
+                                  secondaryClassName="text-xs text-emerald-100/90"
+                                />
                               </Button>
                               {copyStatus && (
                                 <div className="space-y-1 rounded-xl border border-border bg-muted/40 p-3" role="status" aria-live="polite">
                                   <div className="h-2 w-full rounded-full bg-muted">
                                     <div
                                       className={`h-full rounded-full ${
-                                        copyStatus.status === "error" ? "bg-red-500" : "bg-primary"
+                                        copyStatus.status === "error" ? "bg-red-500" : "bg-emerald-500"
                                       }`}
                                       style={{ width: `${copyStatus.progress}%` }}
                                     />
                                   </div>
                                   <p className="text-sm font-medium text-foreground">
-                                    {copyStatus.status === "copying"
-                                      ? `Copying… ${copyStatus.progress}%`
-                                      : copyStatus.status === "success"
-                                      ? "Copied successfully! कॉपी हो गया।"
-                                      : "Copy failed. कॉपी नहीं हो पाया।"}
+                                    {copyStatus.status === "copying" ? (
+                                      `Copying… ${copyStatus.progress}%`
+                                    ) : copyStatus.status === "success" ? (
+                                      <BilingualText
+                                        primary="Copied successfully!"
+                                        secondary="कॉपी हो गया।"
+                                        className="items-start text-left"
+                                        secondaryClassName="text-xs text-muted-foreground"
+                                      />
+                                    ) : (
+                                      <BilingualText
+                                        primary="Copy failed."
+                                        secondary="कॉपी नहीं हो पाया।"
+                                        className="items-start text-left"
+                                        secondaryClassName="text-xs text-muted-foreground"
+                                      />
+                                    )}
                                   </p>
                                 </div>
                               )}
@@ -1163,8 +1234,14 @@ function App(): JSX.Element {
                                 onClick={() => handleDownload(program)}
                                 className="flex-1 min-w-[140px]"
                               >
-                                <Download className="mr-2 h-5 w-5" aria-hidden="true" />
-                                Download | डाउनलोड
+                                <Download className="h-5 w-5" aria-hidden="true" />
+                                <BilingualText
+                                  primary="Download"
+                                  secondary="डाउनलोड"
+                                  align="start"
+                                  className="items-start text-left"
+                                  secondaryClassName="text-xs text-muted-foreground"
+                                />
                               </Button>
                               <Button
                                 type="button"
@@ -1182,17 +1259,29 @@ function App(): JSX.Element {
                                 }}
                                 className="flex-1 min-w-[140px]"
                               >
-                                <Pencil className="mr-2 h-5 w-5" aria-hidden="true" />
-                                Edit | एडिट
+                                <Pencil className="h-5 w-5" aria-hidden="true" />
+                                <BilingualText
+                                  primary="Edit"
+                                  secondary="एडिट"
+                                  align="start"
+                                  className="items-start text-left"
+                                  secondaryClassName="text-xs text-muted-foreground"
+                                />
                               </Button>
                               <Button
                                 type="button"
-                                variant="destructive"
+                                variant="ghost"
                                 onClick={() => handleDelete(program.id)}
-                                className="flex-1 min-w-[140px]"
+                                className="flex-1 min-w-[140px] border border-transparent text-red-600 hover:border-red-100 hover:bg-red-50"
                               >
-                                <Trash2 className="mr-2 h-5 w-5" aria-hidden="true" />
-                                Delete | डिलीट
+                                <Trash2 className="h-5 w-5" aria-hidden="true" />
+                                <BilingualText
+                                  primary="Delete"
+                                  secondary="डिलीट"
+                                  align="start"
+                                  className="items-start text-left"
+                                  secondaryClassName="text-xs text-red-500"
+                                />
                               </Button>
                             </div>
                           </CardContent>
@@ -1206,19 +1295,19 @@ function App(): JSX.Element {
                           <div className="flex items-center justify-between gap-3">
                             <div className="min-w-0">
                               <p className="truncate text-lg font-semibold text-foreground">{program.name}</p>
-                              <p className="text-sm text-muted-foreground">Size | आकार: {sizeDisplay}</p>
+                              <p className="text-sm text-muted-foreground">Size: {sizeDisplay}</p>
                             </div>
                             <Button
                               type="button"
                               size="icon"
-                              variant="secondary"
+                              variant="success"
                               onClick={() => handleCopyToSdCard(program)}
                               disabled={isCopying}
-                              className="h-10 w-10"
+                              className="h-10 w-10 shadow-lg shadow-emerald-200/50"
                               aria-label={`Copy ${program.name} to SD card`}
                             >
-                              <HardDrive className="h-5 w-5 text-red-500" aria-hidden="true" />
-                              <span className="sr-only">Copy to SD Card | SD कार्ड में कॉपी करें</span>
+                              <HardDrive className="h-5 w-5 text-white" aria-hidden="true" />
+                              <span className="sr-only">Copy to SD Card</span>
                             </Button>
                           </div>
                           {copyStatus && (
@@ -1226,17 +1315,29 @@ function App(): JSX.Element {
                               <div className="h-2 w-full rounded-full bg-muted">
                                 <div
                                   className={`h-full rounded-full ${
-                                    copyStatus.status === "error" ? "bg-red-500" : "bg-primary"
+                                    copyStatus.status === "error" ? "bg-red-500" : "bg-emerald-500"
                                   }`}
                                   style={{ width: `${copyStatus.progress}%` }}
                                 />
                               </div>
                               <p className="text-sm font-medium text-foreground">
-                                {copyStatus.status === "copying"
-                                  ? `Copying… ${copyStatus.progress}%`
-                                  : copyStatus.status === "success"
-                                  ? "Copied successfully! कॉपी हो गया।"
-                                  : "Copy failed. कॉपी नहीं हो पाया।"}
+                                {copyStatus.status === "copying" ? (
+                                  `Copying… ${copyStatus.progress}%`
+                                ) : copyStatus.status === "success" ? (
+                                  <BilingualText
+                                    primary="Copied successfully!"
+                                    secondary="कॉपी हो गया।"
+                                    className="items-start text-left"
+                                    secondaryClassName="text-xs text-muted-foreground"
+                                  />
+                                ) : (
+                                  <BilingualText
+                                    primary="Copy failed."
+                                    secondary="कॉपी नहीं हो पाया।"
+                                    className="items-start text-left"
+                                    secondaryClassName="text-xs text-muted-foreground"
+                                  />
+                                )}
                               </p>
                             </div>
                           )}
@@ -1262,8 +1363,9 @@ function App(): JSX.Element {
                   <p>
                     नीचे वाले बटन से नया प्रोग्राम जोड़ें। फाइल डाउनलोड करके SD कार्ड में कॉपी करें।
                   </p>
-                  <Button type="button" onClick={() => setActiveTab("add")}>
-                    ➕ Add Program | नया जोड़ें
+                  <Button type="button" onClick={() => setActiveTab("add")} className="flex-col gap-1">
+                    <span aria-hidden="true" className="text-2xl">➕</span>
+                    <BilingualText primary="Add Program" secondary="नया जोड़ें" />
                   </Button>
                 </CardContent>
               </Card>
@@ -1275,7 +1377,7 @@ function App(): JSX.Element {
                 size="sm"
                 className="text-red-600 hover:text-red-700 hover:bg-red-50 focus-visible:ring-red-600"
                 onClick={handleClearAll}
-                title="Delete Everything (Dangerous) | सब हटाएं"
+                title="Delete Everything (Dangerous)"
                 aria-label="Delete everything (dangerous)"
               >
                 <Trash2 className="h-4 w-4" aria-hidden="true" />
@@ -1293,7 +1395,23 @@ function App(): JSX.Element {
                   <PlusCircle className="h-7 w-7 text-primary" aria-hidden="true" />
                 )}
                 <CardTitle>
-                  {isEditing ? "Edit Program | प्रोग्राम बदलें" : "Add New Program | नया प्रोग्राम जोड़ें"}
+                  {isEditing ? (
+                    <BilingualText
+                      primary="Edit Program"
+                      secondary="प्रोग्राम बदलें"
+                      align="start"
+                      className="items-start text-left"
+                      secondaryClassName="text-base text-muted-foreground"
+                    />
+                  ) : (
+                    <BilingualText
+                      primary="Add New Program"
+                      secondary="नया प्रोग्राम जोड़ें"
+                      align="start"
+                      className="items-start text-left"
+                      secondaryClassName="text-base text-muted-foreground"
+                    />
+                  )}
                 </CardTitle>
               </div>
               <CardDescription className="text-base text-muted-foreground">
@@ -1306,7 +1424,18 @@ function App(): JSX.Element {
             <CardContent className="space-y-5">
               <form className="flex flex-col gap-5" onSubmit={handleSubmit}>
                 <div className="flex flex-col gap-2">
-                  <Label htmlFor="programName">Program Name | प्रोग्राम नाम *</Label>
+                  <Label
+                    htmlFor="programName"
+                    className="space-y-1"
+                  >
+                    <BilingualText
+                      primary="Program Name *"
+                      secondary="प्रोग्राम नाम (अनिवार्य)"
+                      align="start"
+                      className="items-start text-left"
+                      secondaryClassName="text-sm text-muted-foreground"
+                    />
+                  </Label>
                   <Input
                     id="programName"
                     name="programName"
@@ -1314,24 +1443,34 @@ function App(): JSX.Element {
                     onChange={handleTextChange}
                     maxLength={50}
                     required
-                    placeholder="e.g., Shaadi Entry | शादी एंट्री"
+                    placeholder="e.g., Shaadi Entry"
                   />
                 </div>
 
                 <div className="flex flex-col gap-2">
-                  <Label>
-                    {isEditing
-                      ? "LED File (.led) | LED फाइल (.led) (optional)"
-                      : "LED File (.led) | LED फाइल (.led) *"}
+                  <Label className="space-y-1">
+                    <BilingualText
+                      primary={isEditing ? "LED File (.led) (optional)" : "LED File (.led) *"}
+                      secondary={isEditing ? "LED फाइल (.led) (वैकल्पिक)" : "LED फाइल (.led) (अनिवार्य)"}
+                      align="start"
+                      className="items-start text-left"
+                      secondaryClassName="text-sm text-muted-foreground"
+                    />
                   </Label>
                   <label className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-border bg-muted/40 px-4 py-6 text-center text-muted-foreground">
                     <FilePlus2 className="mb-2 h-10 w-10 text-primary" aria-hidden="true" />
-                    <span className="mb-1 text-base">Tap to choose LED file | LED फाइल चुनें</span>
-                    <span className="text-xs text-muted-foreground/80">
-                      {isEditing
-                        ? "Leave blank to keep current file. वर्तमान फाइल रखने के लिए खाली छोड़ें।"
-                        : "Only .led files are accepted | सिर्फ .led फाइल"}
-                    </span>
+                    <BilingualText
+                      primary="Tap to choose LED file"
+                      secondary="LED फाइल चुनें"
+                      className="mb-1 items-center text-base"
+                      secondaryClassName="text-sm text-muted-foreground/80"
+                    />
+                    <BilingualText
+                      primary={isEditing ? "Leave blank to keep current file." : "Only .led files are accepted."}
+                      secondary={isEditing ? "पुरानी फाइल रखने के लिए खाली छोड़ें।" : "केवल .led फाइलें मान्य हैं।"}
+                      className="items-center text-sm"
+                      secondaryClassName="text-xs text-muted-foreground/80"
+                    />
                     <input type="file" accept=".led" onChange={handleLedFileChange} className="sr-only" />
                   </label>
                   {isEditing && editingProgram?.originalLedName && !formData.ledFile && (
@@ -1347,7 +1486,15 @@ function App(): JSX.Element {
                 </div>
 
                 <div className="flex flex-col gap-2">
-                  <Label htmlFor="description">Description | विवरण (optional)</Label>
+                  <Label htmlFor="description" className="space-y-1">
+                    <BilingualText
+                      primary="Description (optional)"
+                      secondary="विवरण (वैकल्पिक)"
+                      align="start"
+                      className="items-start text-left"
+                      secondaryClassName="text-sm text-muted-foreground"
+                    />
+                  </Label>
                   <Textarea
                     id="description"
                     name="description"
@@ -1355,16 +1502,34 @@ function App(): JSX.Element {
                     onChange={handleTextChange}
                     maxLength={200}
                     rows={3}
-                    placeholder="जैसे: लाल-सफेद चमकती लाइट | e.g., Red-white flashing"
+                    placeholder="e.g., Red-white flashing"
                   />
                 </div>
 
                 <div className="flex flex-col gap-2">
-                  <Label>Photo | फोटो (optional)</Label>
+                  <Label className="space-y-1">
+                    <BilingualText
+                      primary="Photo (optional)"
+                      secondary="फोटो (वैकल्पिक)"
+                      align="start"
+                      className="items-start text-left"
+                      secondaryClassName="text-sm text-muted-foreground"
+                    />
+                  </Label>
                   <label className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-border bg-muted/40 px-4 py-6 text-center text-muted-foreground">
                     <ImageIcon className="mb-2 h-10 w-10 text-primary" aria-hidden="true" />
-                    <span className="mb-1 text-base">Add photo | फोटो जोड़ें</span>
-                    <span className="text-xs text-muted-foreground/80">JPG/PNG, max 2MB | JPG/PNG, अधिकतम 2MB</span>
+                    <BilingualText
+                      primary="Add photo"
+                      secondary="फोटो जोड़ें"
+                      className="mb-1 items-center text-base"
+                      secondaryClassName="text-sm text-muted-foreground/80"
+                    />
+                    <BilingualText
+                      primary="JPG/PNG, max 2MB"
+                      secondary="JPG/PNG, अधिकतम 2MB"
+                      className="items-center text-sm"
+                      secondaryClassName="text-xs text-muted-foreground/80"
+                    />
                     <input
                       type="file"
                       accept="image/png, image/jpeg"
@@ -1387,15 +1552,33 @@ function App(): JSX.Element {
                         className="self-start text-red-600 hover:text-red-700"
                         onClick={() => setShouldRemovePhoto(true)}
                       >
-                        Remove photo | फोटो हटाएं
+                        <BilingualText
+                          primary="Remove photo"
+                          secondary="फोटो हटाएं"
+                          align="start"
+                          className="items-start text-left"
+                          secondaryClassName="text-xs text-red-500"
+                        />
                       </Button>
                     </div>
                   )}
                   {shouldRemovePhoto && !formData.photoFile && (
                     <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-dashed border-red-300 bg-red-50 px-4 py-2 text-sm text-red-700">
-                      <span>Photo will be removed on save. फोटो सेव करते समय हट जाएगी।</span>
+                      <BilingualText
+                        primary="Photo will be removed on save."
+                        secondary="फोटो सेव करते समय हट जाएगी।"
+                        align="start"
+                        className="items-start text-left"
+                        secondaryClassName="text-xs text-red-600"
+                      />
                       <Button type="button" variant="ghost" size="sm" onClick={() => setShouldRemovePhoto(false)}>
-                        Keep photo | फोटो रखें
+                        <BilingualText
+                          primary="Keep photo"
+                          secondary="फोटो रखें"
+                          align="start"
+                          className="items-start text-left"
+                          secondaryClassName="text-xs text-muted-foreground"
+                        />
                       </Button>
                     </div>
                   )}
@@ -1407,11 +1590,39 @@ function App(): JSX.Element {
                 </div>
 
                 <div className="flex flex-col gap-3 sm:flex-row">
-                  <Button type="submit" disabled={isSaving}>
-                    {isEditing ? "💾 Update | अपडेट करें" : "💾 Save | सेव करें"}
+                  <Button type="submit" disabled={isSaving} className="gap-2">
+                    <span aria-hidden="true" className="text-xl">
+                      💾
+                    </span>
+                    {isEditing ? (
+                      <BilingualText
+                        primary="Update"
+                        secondary="अपडेट करें"
+                        align="start"
+                        className="items-start text-left"
+                        secondaryClassName="text-sm text-muted-foreground/80"
+                      />
+                    ) : (
+                      <BilingualText
+                        primary="Save"
+                        secondary="सेव करें"
+                        align="start"
+                        className="items-start text-left"
+                        secondaryClassName="text-sm text-muted-foreground/80"
+                      />
+                    )}
                   </Button>
-                  <Button type="button" variant="secondary" onClick={() => handleCancel("user")}>
-                    ✖️ Cancel | रद्द करें
+                  <Button type="button" variant="secondary" onClick={() => handleCancel("user")} className="gap-2">
+                    <span aria-hidden="true" className="text-xl">
+                      ✖️
+                    </span>
+                    <BilingualText
+                      primary="Cancel"
+                      secondary="रद्द करें"
+                      align="start"
+                      className="items-start text-left"
+                      secondaryClassName="text-sm text-muted-foreground/80"
+                    />
                   </Button>
                 </div>
               </form>
