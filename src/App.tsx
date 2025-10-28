@@ -9,6 +9,8 @@ import {
   FolderX,
   HardDrive,
   Pencil,
+  LayoutGrid,
+  List,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -73,6 +75,32 @@ const sortPrograms = (items: Program[]): Program[] =>
     (a, b) => new Date(b.dateAdded).getTime() - new Date(a.dateAdded).getTime()
   );
 
+type CopyStatus = {
+  status: "copying" | "success" | "error";
+  progress: number;
+};
+
+const formatFileSize = (bytes?: number | null): string => {
+  if (bytes === undefined || bytes === null) {
+    return "";
+  }
+
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let size = bytes;
+  let unitIndex = 0;
+
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex += 1;
+  }
+
+  const formatter = new Intl.NumberFormat(undefined, {
+    maximumFractionDigits: unitIndex === 0 ? 0 : 1,
+  });
+
+  return `${formatter.format(size)} ${units[unitIndex]}`;
+};
+
 function App(): JSX.Element {
   const [programs, setPrograms] = useState<Program[]>([]);
   const [formData, setFormData] = useState<ProgramFormState>(getEmptyForm);
@@ -86,6 +114,8 @@ function App(): JSX.Element {
   const [isFileSystemSupported, setIsFileSystemSupported] = useState(false);
   const [isLoadingPrograms, setIsLoadingPrograms] = useState(true);
   const [hasPersistentStorage, setHasPersistentStorage] = useState<boolean | null>(null);
+  const [catalogView, setCatalogView] = useState<"grid" | "list">("grid");
+  const [copyStatuses, setCopyStatuses] = useState<Record<string, CopyStatus>>({});
 
   useEffect(() => {
     let isMounted = true;
@@ -180,6 +210,51 @@ function App(): JSX.Element {
     const timerId = window.setTimeout(() => setFeedback(null), 5000);
     return () => window.clearTimeout(timerId);
   }, [feedback]);
+
+  useEffect(() => {
+    if (!directoryHandle || directoryPermission !== "granted") {
+      return;
+    }
+
+    const missingPrograms = programs.filter(
+      (program) => program.fileSizeBytes === undefined || program.fileSizeBytes === null
+    );
+
+    if (missingPrograms.length === 0) {
+      return;
+    }
+
+    let isActive = true;
+
+    (async () => {
+      const updates: Program[] = [];
+
+      for (const program of missingPrograms) {
+        try {
+          const fileHandle = await directoryHandle.getFileHandle(program.storedFileName, { create: false });
+          const file = await fileHandle.getFile();
+          updates.push({ ...program, fileSizeBytes: file.size });
+        } catch (error) {
+          console.warn("⚠️ Could not determine file size", error);
+        }
+      }
+
+      if (!isActive || updates.length === 0) {
+        return;
+      }
+
+      setPrograms((prev) => {
+        const updateMap = new Map(updates.map((program) => [program.id, program]));
+        return sortPrograms(prev.map((program) => updateMap.get(program.id) ?? program));
+      });
+
+      await Promise.allSettled(updates.map((program) => saveStoredProgram(program)));
+    })();
+
+    return () => {
+      isActive = false;
+    };
+  }, [directoryHandle, directoryPermission, programs]);
 
   const ensurePersistentStorage = useCallback(async () => {
     if (typeof navigator === "undefined" || !navigator.storage) {
@@ -467,6 +542,7 @@ function App(): JSX.Element {
 
         let updatedStoredFileName = programToUpdate.storedFileName;
         let updatedOriginalName = programToUpdate.originalLedName;
+        let updatedFileSize = programToUpdate.fileSizeBytes ?? null;
 
         if (formData.ledFile) {
           const requiredBytes = formData.ledFile.size + (formData.photoFile?.size ?? 0);
@@ -497,6 +573,7 @@ function App(): JSX.Element {
           }
 
           updatedOriginalName = formData.ledFile.name;
+          updatedFileSize = formData.ledFile.size;
         }
 
         const updatedPhotoDataUrl = formData.photoFile
@@ -512,6 +589,7 @@ function App(): JSX.Element {
           originalLedName: updatedOriginalName,
           storedFileName: updatedStoredFileName,
           photoDataUrl: updatedPhotoDataUrl,
+          fileSizeBytes: updatedFileSize,
         };
 
         await saveStoredProgram(updatedProgram);
@@ -554,6 +632,7 @@ function App(): JSX.Element {
           storedFileName,
           photoDataUrl,
           dateAdded: new Date().toISOString(),
+          fileSizeBytes: formData.ledFile!.size,
         };
 
         await saveStoredProgram(newProgram);
@@ -660,6 +739,8 @@ function App(): JSX.Element {
       return;
     }
 
+    let writable: FileSystemWritableFileStream | null = null;
+
     try {
       const sourceDirectory = await ensureDirectoryAccess();
       if (!sourceDirectory) {
@@ -671,17 +752,80 @@ function App(): JSX.Element {
 
       const sdHandle = await window.showDirectoryPicker({ mode: "readwrite" });
       const targetFileHandle = await sdHandle.getFileHandle("00_program.led", { create: true });
-      const writable = await targetFileHandle.createWritable();
-      await writable.write(sourceFile);
-      await writable.close();
+      writable = await targetFileHandle.createWritable();
 
+      setCopyStatuses((prev) => ({
+        ...prev,
+        [program.id]: { status: "copying", progress: 0 },
+      }));
+
+      const reader = sourceFile.stream().getReader();
+      const totalBytes = Math.max(sourceFile.size, 1);
+      let bytesWritten = 0;
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) {
+          break;
+        }
+        if (value) {
+          await writable.write(value);
+          bytesWritten += value.length;
+          const progress = Math.min(100, Math.round((bytesWritten / totalBytes) * 100));
+          setCopyStatuses((prev) => ({
+            ...prev,
+            [program.id]: { status: "copying", progress },
+          }));
+        }
+      }
+
+      await writable.close();
+      writable = null;
+
+      setCopyStatuses((prev) => ({
+        ...prev,
+        [program.id]: { status: "success", progress: 100 },
+      }));
       window.alert(
         "Copied to SD card root as 00_program.led.\nSD कार्ड में 00_program.led नाम से कॉपी हो गया।"
       );
       console.log("💾 Program copied to SD card", { id: program.id, directory: sdHandle.name });
+
+      window.setTimeout(() => {
+        setCopyStatuses((prev) => {
+          const entry = prev[program.id];
+          if (!entry || entry.status === "copying") {
+            return prev;
+          }
+          const { [program.id]: _removed, ...rest } = prev;
+          return rest;
+        });
+      }, 4000);
     } catch (error) {
       console.error("❌ Copy to SD card failed", error);
+      if (writable) {
+        try {
+          await writable.abort();
+        } catch (abortError) {
+          console.warn("⚠️ Could not abort write stream", abortError);
+        }
+      }
+      setCopyStatuses((prev) => ({
+        ...prev,
+        [program.id]: { status: "error", progress: 0 },
+      }));
       window.alert("Could not copy to SD card. SD कार्ड में कॉपी नहीं हो पाया।");
+
+      window.setTimeout(() => {
+        setCopyStatuses((prev) => {
+          const entry = prev[program.id];
+          if (!entry || entry.status === "copying") {
+            return prev;
+          }
+          const { [program.id]: _removed, ...rest } = prev;
+          return rest;
+        });
+      }, 5000);
     }
   };
 
@@ -740,6 +884,8 @@ function App(): JSX.Element {
   const editingProgram = isEditing
     ? programs.find((program) => program.id === editingProgramId) ?? null
     : null;
+  const isGridView = catalogView === "grid";
+  const isListView = !isGridView;
 
   return (
     <div className="min-h-screen bg-background">
@@ -842,7 +988,38 @@ function App(): JSX.Element {
 
         {isViewTab ? (
           <section className="flex flex-col gap-4">
-            <h2 className="text-2xl font-semibold">Saved Programs | सेव किए गए प्रोग्राम</h2>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <h2 className="text-2xl font-semibold">Saved Programs | सेव किए गए प्रोग्राम</h2>
+              <div className="flex items-center gap-2">
+                <span className="hidden text-sm font-medium text-muted-foreground sm:inline">
+                  Layout | लेआउट:
+                </span>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={isGridView ? "primary" : "ghost"}
+                    aria-pressed={isGridView}
+                    onClick={() => setCatalogView("grid")}
+                    className="px-3"
+                  >
+                    <LayoutGrid className="h-5 w-5" aria-hidden="true" />
+                    <span className="hidden sm:inline">Grid</span>
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={isListView ? "primary" : "ghost"}
+                    aria-pressed={isListView}
+                    onClick={() => setCatalogView("list")}
+                    className="px-3"
+                  >
+                    <List className="h-5 w-5" aria-hidden="true" />
+                    <span className="hidden sm:inline">List</span>
+                  </Button>
+                </div>
+              </div>
+            </div>
             {isLoadingPrograms ? (
               <Card className="border border-dashed border-border bg-card text-muted-foreground">
                 <CardContent className="space-y-4 py-10 text-center text-base">
@@ -850,60 +1027,130 @@ function App(): JSX.Element {
                 </CardContent>
               </Card>
             ) : hasPrograms ? (
-              <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-                {programs.map((program) => (
-                  <Card key={program.id} className="flex flex-col overflow-hidden border border-border bg-card">
-                    {program.photoDataUrl ? (
-                      <img
-                        src={program.photoDataUrl}
-                        alt={`${program.name} preview`}
-                        className="h-48 w-full object-cover"
-                      />
-                    ) : (
-                      <div className="flex h-48 w-full items-center justify-center bg-muted text-6xl text-muted-foreground/70">
-                        💡
+              <div
+                className={
+                  isGridView
+                    ? "grid gap-5 sm:grid-cols-2 lg:grid-cols-3"
+                    : "flex flex-col gap-5"
+                }
+              >
+                {programs.map((program) => {
+                  const copyStatus = copyStatuses[program.id];
+                  const isCopying = copyStatus?.status === "copying";
+                  const formattedFileSize =
+                    program.fileSizeBytes !== undefined && program.fileSizeBytes !== null
+                      ? formatFileSize(program.fileSizeBytes)
+                      : null;
+                  const sizeDisplay =
+                    formattedFileSize ??
+                    (directoryPermission === "granted"
+                      ? "Size unavailable. आकार उपलब्ध नहीं।"
+                      : "Connect folder to view size. फोल्डर कनेक्ट करें।");
+
+                  return (
+                    <Card
+                      key={program.id}
+                      className={`flex overflow-hidden border border-border bg-card ${
+                        isListView ? "flex-col sm:flex-row" : "flex-col"
+                      }`}
+                    >
+                      <div className={isListView ? "sm:w-48 sm:flex-shrink-0" : undefined}>
+                        {program.photoDataUrl ? (
+                          <img
+                            src={program.photoDataUrl}
+                            alt={`${program.name} preview`}
+                            className={`h-48 w-full object-cover ${
+                              isListView ? "sm:h-full sm:w-48" : ""
+                            }`}
+                          />
+                        ) : (
+                          <div
+                            className={`flex h-48 w-full items-center justify-center bg-muted text-6xl text-muted-foreground/70 ${
+                              isListView ? "sm:h-full sm:w-48" : ""
+                            }`}
+                          >
+                            💡
+                          </div>
+                        )}
                       </div>
-                    )}
-                    <CardContent className="flex flex-1 flex-col gap-3 p-4 sm:p-5">
-                      <div>
-                        <h3 className="text-xl font-semibold text-foreground">{program.name}</h3>
-                        <p className="text-sm text-muted-foreground">
-                          Added: {new Date(program.dateAdded).toLocaleString()}
-                        </p>
-                      </div>
-                      {program.description && (
-                        <p className="rounded-xl border border-border bg-muted/40 px-3 py-2 text-base text-foreground leading-relaxed">
-                          {program.description}
-                        </p>
-                      )}
-                      <div className="mt-auto flex flex-col gap-3">
-                        <Button type="button" variant="success" onClick={() => handleDownload(program)}>
-                          <Download className="h-6 w-6" aria-hidden="true" />
-                          📥 Download | डाउनलोड करें
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          onClick={() => handleCopyToSdCard(program)}
-                          className="h-auto flex-wrap gap-2 whitespace-normal py-3 text-center text-base"
-                        >
-                          <HardDrive className="h-6 w-6 flex-shrink-0 text-red-500" aria-hidden="true" />
-                          <span className="leading-tight">
-                            Copy to SD Card | SD कार्ड में कॉपी करें
-                          </span>
-                        </Button>
-                        <Button type="button" variant="secondary" onClick={() => handleStartEdit(program)}>
-                          <Pencil className="h-5 w-5" aria-hidden="true" />
-                          ✏️ Edit Details | विवरण बदलें
-                        </Button>
-                        <Button type="button" variant="destructive" onClick={() => handleDelete(program.id)}>
-                          <Trash2 className="h-6 w-6" aria-hidden="true" />
-                          🗑️ Delete | हटाएं
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
+                      <CardContent className="flex flex-1 flex-col gap-3 p-4 sm:p-5">
+                        <div className="space-y-2">
+                          <h3 className="text-xl font-semibold text-foreground">{program.name}</h3>
+                          <div className="space-y-1 text-sm text-muted-foreground">
+                            <p>
+                              <span className="font-medium text-foreground">Uploaded | अपलोड:</span>{" "}
+                              {new Date(program.dateAdded).toLocaleString()}
+                            </p>
+                            <p>
+                              <span className="font-medium text-foreground">File | फाइल:</span>{" "}
+                              {program.originalLedName}
+                            </p>
+                            <p>
+                              <span className="font-medium text-foreground">Size | आकार:</span>{" "}
+                              {sizeDisplay}
+                            </p>
+                          </div>
+                        </div>
+                        {program.description && (
+                          <p className="rounded-xl border border-border bg-muted/40 px-3 py-2 text-base text-foreground leading-relaxed">
+                            {program.description}
+                          </p>
+                        )}
+                        <div className="mt-auto flex flex-col gap-3">
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            onClick={() => handleCopyToSdCard(program)}
+                            className="h-auto flex-wrap gap-2 whitespace-normal py-3 text-center text-base"
+                            disabled={isCopying}
+                          >
+                            <HardDrive className="h-6 w-6 flex-shrink-0 text-red-500" aria-hidden="true" />
+                            <span className="leading-tight">
+                              {isCopying ? "Copying… कॉपी जारी…" : "Copy to SD Card | SD कार्ड में कॉपी करें"}
+                            </span>
+                          </Button>
+                          {copyStatus && (
+                            <div className="space-y-1 rounded-xl border border-border bg-muted/40 p-3" role="status" aria-live="polite">
+                              <div className="h-2 w-full rounded-full bg-muted">
+                                <div
+                                  className={`h-full rounded-full ${
+                                    copyStatus.status === "error" ? "bg-red-500" : "bg-primary"
+                                  }`}
+                                  style={{ width: `${copyStatus.progress}%` }}
+                                />
+                              </div>
+                              <p
+                                className={`text-xs ${
+                                  copyStatus.status === "error"
+                                    ? "text-red-600"
+                                    : "text-muted-foreground"
+                                }`}
+                              >
+                                {copyStatus.status === "copying"
+                                  ? `Copying… ${copyStatus.progress}%`
+                                  : copyStatus.status === "success"
+                                  ? "Copy complete! कॉपी पूरी हुई।"
+                                  : "Copy failed. कॉपी नहीं हो पायी।"}
+                              </p>
+                            </div>
+                          )}
+                          <Button type="button" variant="secondary" onClick={() => handleStartEdit(program)}>
+                            <Pencil className="h-5 w-5" aria-hidden="true" />
+                            ✏️ Edit Details | विवरण बदलें
+                          </Button>
+                          <Button type="button" variant="destructive" onClick={() => handleDelete(program.id)}>
+                            <Trash2 className="h-6 w-6" aria-hidden="true" />
+                            🗑️ Delete | हटाएं
+                          </Button>
+                          <Button type="button" variant="success" onClick={() => handleDownload(program)}>
+                            <Download className="h-6 w-6" aria-hidden="true" />
+                            📥 Download | डाउनलोड करें
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
               </div>
             ) : (
               <Card className="border border-dashed border-border bg-card text-muted-foreground">
