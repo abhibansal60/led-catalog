@@ -98,5 +98,30 @@ To enable preview deploys for pull requests, extend the workflow with an `on: pu
 - Monitor Netlify free-tier usage (bandwidth/build minutes) monthly; upgrade only if traffic demands it.
 - Update this README and `AGENTS.md` whenever automation or operating practices change.
 
+## Contingency: Migrating away from Netlify
+Netlify paused the production site after free-tier limits were exceeded. The steps below outline how to move to a free alternative such as **Cloudflare Pages** (static hosting + free SSL) while preserving the existing catalog bundle.
+
+1. **Export the last working deploy from Netlify**
+   - Log in to Netlify → *Deploys* tab → open the latest successful deploy.
+   - Click **Download deploy** to retrieve the ZIP (`dist/` bundle). Keep it as a backup.
+   - Optional: install the Netlify CLI locally and run `netlify deploy --download` for a scripted copy.
+2. **Copy LED assets from the phone**
+   - Connect the phone that stores the catalog source files via USB (or use the Files app → Share).
+   - Browse to the `LED Files store` directory and copy every `.led`, photo, and note export into a safe folder on your computer. These assets are independent of Netlify and must be versioned manually (e.g., commit them to `docs/led-backups/`).
+3. **Create a Cloudflare Pages project (free)**
+   - Sign in to Cloudflare → Pages → **Create a project** → *Connect to Git*.
+   - Select this GitHub repository. Use build command `npm run build` and output directory `dist`.
+   - Cloudflare provides unlimited bandwidth for static sites on the free plan, so usage spikes will not pause the site.
+4. **Wire up environment and DNS**
+   - Trigger the initial build. Confirm the preview URL loads.
+   - Update the custom domain (if any) to point to Cloudflare’s CNAME targets.
+   - Disable or delete the Netlify site once Cloudflare Pages is serving traffic.
+5. **Restore deploy history if required**
+   - Upload the downloaded Netlify ZIP as a Git tag asset or attach it to a GitHub Release for traceability.
+   - Commit the copied `LED Files store` backup into the repo (or a private cloud drive) so technicians can recover the raw controller files quickly.
+
+> Tip: GitHub Pages is another free alternative; however, Cloudflare Pages handles SPA routing without extra config and scales
+> bandwidth better for media-heavy catalogs.
+
 ## License
 MIT – tailor it freely for the Bansal Lights team.
