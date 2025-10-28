@@ -12,6 +12,7 @@ export type StoredProgram = {
   storedFileName: string;
   photoDataUrl: string | null;
   dateAdded: string;
+  fileSizeBytes?: number | null;
 };
 
 type StoredSettings = {
