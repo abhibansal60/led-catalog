@@ -1,4 +1,11 @@
-import React, { ChangeEvent, FormEvent, useCallback, useEffect, useState } from "react";
+import React, {
+  ChangeEvent,
+  FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import {
   Download,
   Trash2,
@@ -116,6 +123,7 @@ function App(): JSX.Element {
   const [hasPersistentStorage, setHasPersistentStorage] = useState<boolean | null>(null);
   const [catalogView, setCatalogView] = useState<"grid" | "list">("grid");
   const [copyStatuses, setCopyStatuses] = useState<Record<string, CopyStatus>>({});
+  const [searchTerm, setSearchTerm] = useState("");
 
   useEffect(() => {
     let isMounted = true;
@@ -884,8 +892,22 @@ function App(): JSX.Element {
   const editingProgram = isEditing
     ? programs.find((program) => program.id === editingProgramId) ?? null
     : null;
+  const trimmedSearchTerm = searchTerm.trim();
+  const filteredPrograms = useMemo(() => {
+    const normalized = trimmedSearchTerm.toLowerCase();
+    if (!normalized) {
+      return programs;
+    }
+
+    return programs.filter((program) => {
+      const haystack = `${program.name} ${program.originalLedName} ${program.description}`.toLowerCase();
+      return haystack.includes(normalized);
+    });
+  }, [programs, trimmedSearchTerm]);
+
   const isGridView = catalogView === "grid";
   const isListView = !isGridView;
+  const hasFilteredPrograms = filteredPrograms.length > 0;
 
   return (
     <div className="min-h-screen bg-background">
@@ -990,34 +1012,44 @@ function App(): JSX.Element {
           <section className="flex flex-col gap-4">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <h2 className="text-2xl font-semibold">Saved Programs | सेव किए गए प्रोग्राम</h2>
-              <div className="flex items-center gap-2">
-                <span className="hidden text-sm font-medium text-muted-foreground sm:inline">
-                  Layout | लेआउट:
-                </span>
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={isGridView ? "primary" : "ghost"}
-                    aria-pressed={isGridView}
-                    onClick={() => setCatalogView("grid")}
-                    className="px-3"
-                  >
-                    <LayoutGrid className="h-5 w-5" aria-hidden="true" />
-                    <span className="hidden sm:inline">Grid</span>
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={isListView ? "primary" : "ghost"}
-                    aria-pressed={isListView}
-                    onClick={() => setCatalogView("list")}
-                    className="px-3"
-                  >
-                    <List className="h-5 w-5" aria-hidden="true" />
-                    <span className="hidden sm:inline">List</span>
-                  </Button>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="hidden text-sm font-medium text-muted-foreground sm:inline">
+                    Layout | लेआउट:
+                  </span>
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={isGridView ? "primary" : "ghost"}
+                      aria-pressed={isGridView}
+                      onClick={() => setCatalogView("grid")}
+                      className="px-3"
+                    >
+                      <LayoutGrid className="h-5 w-5" aria-hidden="true" />
+                      <span className="hidden sm:inline">Grid</span>
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={isListView ? "primary" : "ghost"}
+                      aria-pressed={isListView}
+                      onClick={() => setCatalogView("list")}
+                      className="px-3"
+                    >
+                      <List className="h-5 w-5" aria-hidden="true" />
+                      <span className="hidden sm:inline">List</span>
+                    </Button>
+                  </div>
                 </div>
+                <Input
+                  type="search"
+                  value={searchTerm}
+                  onChange={(event) => setSearchTerm(event.target.value)}
+                  placeholder="Search by name or description | नाम या विवरण से खोजें"
+                  className="w-full sm:w-64"
+                  aria-label="Search programs"
+                />
               </div>
             </div>
             {isLoadingPrograms ? (
@@ -1027,33 +1059,34 @@ function App(): JSX.Element {
                 </CardContent>
               </Card>
             ) : hasPrograms ? (
-              <div
-                className={
-                  isGridView
-                    ? "grid gap-5 sm:grid-cols-2 lg:grid-cols-3"
-                    : "flex flex-col gap-5"
-                }
-              >
-                {programs.map((program) => {
-                  const copyStatus = copyStatuses[program.id];
-                  const isCopying = copyStatus?.status === "copying";
-                  const formattedFileSize =
-                    program.fileSizeBytes !== undefined && program.fileSizeBytes !== null
-                      ? formatFileSize(program.fileSizeBytes)
-                      : null;
-                  const sizeDisplay =
-                    formattedFileSize ??
-                    (directoryPermission === "granted"
-                      ? "Size unavailable. आकार उपलब्ध नहीं।"
-                      : "Connect folder to view size. फोल्डर कनेक्ट करें।");
+              hasFilteredPrograms ? (
+                <div
+                  className={
+                    isGridView
+                      ? "grid gap-5 sm:grid-cols-2 lg:grid-cols-3"
+                      : "flex flex-col gap-5"
+                  }
+                >
+                  {filteredPrograms.map((program) => {
+                    const copyStatus = copyStatuses[program.id];
+                    const isCopying = copyStatus?.status === "copying";
+                    const formattedFileSize =
+                      program.fileSizeBytes !== undefined && program.fileSizeBytes !== null
+                        ? formatFileSize(program.fileSizeBytes)
+                        : null;
+                    const sizeDisplay =
+                      formattedFileSize ??
+                      (directoryPermission === "granted"
+                        ? "Size unavailable. आकार उपलब्ध नहीं।"
+                        : "Connect folder to view size. फोल्डर कनेक्ट करें।");
 
-                  return (
-                    <Card
-                      key={program.id}
-                      className={`flex overflow-hidden border border-border bg-card ${
-                        isListView ? "flex-col sm:flex-row" : "flex-col"
-                      }`}
-                    >
+                    return (
+                      <Card
+                        key={program.id}
+                        className={`flex overflow-hidden border border-border bg-card ${
+                          isListView ? "flex-col sm:flex-row" : "flex-col"
+                        }`}
+                      >
                       <div className={isListView ? "sm:w-48 sm:flex-shrink-0" : undefined}>
                         {program.photoDataUrl ? (
                           <img
@@ -1150,8 +1183,18 @@ function App(): JSX.Element {
                       </CardContent>
                     </Card>
                   );
-                })}
-              </div>
+                  })}
+                </div>
+              ) : (
+                <Card className="border border-dashed border-border bg-card text-muted-foreground">
+                  <CardContent className="space-y-4 py-10 text-center text-base">
+                    <p className="text-xl text-foreground">कोई परिणाम नहीं मिला।</p>
+                    <p>
+                      "{trimmedSearchTerm}" के लिए कोई प्रोग्राम नहीं मिला। स्पेलिंग बदलकर देखें।
+                    </p>
+                  </CardContent>
+                </Card>
+              )
             ) : (
               <Card className="border border-dashed border-border bg-card text-muted-foreground">
                 <CardContent className="space-y-4 py-10 text-center text-base">
