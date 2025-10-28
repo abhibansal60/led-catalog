@@ -13,20 +13,23 @@ Keep this document updated whenever an agent is added, modified, or retired.
 
 ## Active Automations
 
-### GitHub Actions — Netlify Deploy
+### GitHub Actions — Cloudflare Pages Deploy
 - **Location:** `.github/workflows/deploy.yaml`
-- **Trigger:** `push` events to the `main` branch (direct pushes or merged PRs).
-- **Purpose:** Build the Vite app and publish the `dist/` output to Netlify.
+- **Triggers:**
+  - `push` events to the `main` branch (production deploys).
+  - `pull_request` events (preview deploys per branch).
+- **Purpose:** Build the Vite app and publish the `dist/` bundle plus Pages Functions to Cloudflare Pages.
 - **Secrets required:**
-  - `NETLIFY_AUTH_TOKEN` — personal access token (Netlify → User settings → Applications). Expires yearly; rotate before expiry.
-  - `NETLIFY_SITE_ID` — site UUID (Netlify dashboard → Site configuration → Site information).
+  - `CLOUDFLARE_API_TOKEN` — API token with “Cloudflare Pages: Edit” + “Workers KV Storage: Read/Write” for the target account.
+  - `CLOUDFLARE_ACCOUNT_ID` — Cloudflare account identifier hosting the Pages project.
 - **Steps executed:**
-  1. Checkout repository.
-  2. Install dependencies with `npm ci`.
-  3. Create a production bundle via `npm run build`.
-  4. Deploy `dist/` using `netlify/actions/netlify-deploy@v2`.
-- **Outputs:** Updated production site at `https://bansallights.netlify.app/` with release logs in both GitHub Actions and the Netlify deploy history.
-- **Rollback:** Revert or cherry-pick a previous commit to `main`, then re-run the workflow. If deployment must be paused, disable the workflow in GitHub (`Actions` tab → `Deploy to Netlify` → three dots → `Disable workflow`) and/or revoke the Netlify token.
+  1. Check out the repository.
+  2. Provision Node.js 20 and restore the npm cache.
+  3. Install dependencies with `npm ci`.
+  4. Build the production bundle with `npm run build`.
+  5. Publish `dist/` to Cloudflare Pages via `cloudflare/pages-action@v1` (Wrangler 4.x), bundling Functions from `functions/`.
+- **Outputs:** Updated production deployment on the Cloudflare Pages project `led-catalog`, plus unique preview deployments for non-`main` branches (visible in both GitHub Actions logs and the Cloudflare Pages dashboard).
+- **Rollback:** Revert or cherry-pick an earlier commit and push to `main` (the workflow redeploys automatically). To pause deployments, disable the workflow in GitHub (`Actions` → `Deploy to Cloudflare Pages` → “Disable workflow”) and/or rotate the Cloudflare API token.
 
 ### Local / On-Demand AI Assistant
 - **Purpose:** Generate code, docs, and operational updates on request.
@@ -37,16 +40,16 @@ Keep this document updated whenever an agent is added, modified, or retired.
 
 ## Operating Guidelines
 - Automations should focus on deterministic tasks (build, lint, test, deploy). Anything non-deterministic must include human approval gates.
-- Store credentials exclusively in the GitHub Actions secrets vault. Never commit tokens or site IDs to the repo.
+- Store credentials exclusively in the GitHub Actions secrets vault. Never commit tokens, API keys, or account IDs to the repo.
 - When adjusting a workflow, update this runbook with the new behavior, triggers, and rollback steps.
-- Monitor Netlify usage monthly (bandwidth and build minutes) to ensure the project stays within the free tier.
+- Monitor Cloudflare Pages usage monthly (bandwidth, requests, and Durable Objects/KV quotas) to ensure the project stays within the free allocation.
 - Prefer small, composable workflows. If a workflow grows complex, break it into dedicated jobs or files with clear ownership.
 
 ---
 
 ## Handover Checklist for New Agents
-1. Read the latest deployment logs (GitHub Actions + Netlify) to confirm the pipeline is healthy.
-2. Verify secrets have not expired (`NETLIFY_AUTH_TOKEN` shows a recent update date).
+1. Read the latest deployment logs (GitHub Actions + Cloudflare Pages dashboard) to confirm the pipeline is healthy.
+2. Verify secrets have not expired (`CLOUDFLARE_API_TOKEN` shows a recent update date and proper scopes).
 3. Run `npm run build` locally to ensure the codebase still compiles.
 4. Update both this document and `README.md` if you modify automation logic or hosting details.
 5. Announce changes to the team (Slack/WhatsApp) so operators know the new behavior.
@@ -54,7 +57,7 @@ Keep this document updated whenever an agent is added, modified, or retired.
 ---
 
 ## Ideas Under Evaluation
-- Pull request preview deploys on Netlify using branch-based contexts.
+- Pull request preview deploys on Cloudflare Pages with extra smoke checks.
 - Lightweight UI smoke tests (Playwright) that can run before deployment.
 - Automated dependency update bot (Renovate or Dependabot) with a weekly cadence.
 

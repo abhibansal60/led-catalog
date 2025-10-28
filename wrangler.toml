@@ -4,5 +4,5 @@ compatibility_date = "2024-06-01"
 
 [[kv_namespaces]]
 binding = "CATALOG_DB"
-id = "4ab62cbc41bc43259dec114a1e7393f9"           # Replace with the production ID from your Cloudflare dashboard
-preview_id = "00000000000000000000000000000000"    # Replace with the preview namespace ID for local dev
+id = "4ab62cbc41bc43259dec114a1e7393f9"
+preview_id = "178eefa3430545a390a27ccf920fbd20"

@@ -1,6 +1,6 @@
 # Bansal Lights LED Catalog
 
-Modern LED-program catalog for the Bansal Lights team. The app stores `.led` controller files, product photos, and bilingual notes entirely in the browser so technicians can manage their library from a phone even when offline. A production build is live at [https://bansallights.netlify.app/](https://bansallights.netlify.app/).
+Modern LED-program catalog for the Bansal Lights team. The app stores `.led` controller files, product photos, and bilingual notes entirely in the browser so technicians can manage their library from a phone even when offline. Production deployments are served via the Cloudflare Pages project `led-catalog` (default domain: `https://led-catalog.pages.dev/`, swap for your custom domain as needed).
 
 ![Catalog walkthrough](docs/screenshot.png)
 
@@ -10,7 +10,7 @@ Modern LED-program catalog for the Bansal Lights team. The app stores `.led` con
 - 📥 **One-tap download** that always exports `00_program.led` for T-1000/T-8000 controllers.
 - 📷 **Optional photo & notes** to identify how a program looks on-site.
 - 🔐 **Reset switch** (hidden button) to wipe stored data if a device is being handed over.
-- 🚀 **CI-backed deployment** to Netlify on every push/merge to `main`.
+- 🚀 **CI-backed deployment** to Cloudflare Pages on every push/merge to `main`.
 
 ## Tech Stack
 | Area | Choice | Notes |
@@ -19,7 +19,7 @@ Modern LED-program catalog for the Bansal Lights team. The app stores `.led` con
 | Styling | Tailwind CSS + shadcn-inspired primitives | Custom component variants live in `src/components/ui` |
 | State | React hooks + browser `localStorage` | No backend services required |
 | Tooling | Vite 5 | Handles dev server, bundling, and TypeScript |
-| Hosting | Netlify free tier | Automated by GitHub Actions workflow `deploy.yaml` |
+| Hosting | Cloudflare Pages (free tier) | Automated by GitHub Actions workflow `deploy.yaml` |
 
 ## Local Development
 1. Install Node.js 18 (or newer LTS) and npm.

@@ -38,4 +38,3 @@ cache/
 tmp/
 
 *.led
-wrangler.toml
