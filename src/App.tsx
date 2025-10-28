@@ -491,22 +491,6 @@ function App(): JSX.Element {
     console.log(source === "user" ? "↩️ Form cleared by user" : "↩️ Form reset");
   };
 
-  const handleStartEdit = (program: Program) => {
-    setFormData({
-      programName: program.name,
-      ledFile: null,
-      description: program.description ?? "",
-      photoFile: null,
-    });
-    setEditingProgramId(program.id);
-    setShouldRemovePhoto(false);
-    setActiveTab("add");
-    setFeedback(null);
-    document.querySelectorAll<HTMLInputElement>("input[type='file']").forEach((input) => {
-      input.value = "";
-    });
-    console.log("✏️ Editing program", { id: program.id });
-  };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -1011,7 +995,12 @@ function App(): JSX.Element {
         {isViewTab ? (
           <section className="flex flex-col gap-4">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <h2 className="text-2xl font-semibold">Saved Programs | सेव किए गए प्रोग्राम</h2>
+              <h2 className="text-2xl font-semibold">
+                Saved Programs | सेव किए गए प्रोग्राम
+                <span className="ml-2 text-sm font-normal text-muted-foreground">
+                  Total: {programs.length}
+                </span>
+              </h2>
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
                 <div className="flex items-center gap-2">
                   <span className="hidden text-sm font-medium text-muted-foreground sm:inline">
@@ -1062,9 +1051,7 @@ function App(): JSX.Element {
               hasFilteredPrograms ? (
                 <div
                   className={
-                    isGridView
-                      ? "grid gap-5 sm:grid-cols-2 lg:grid-cols-3"
-                      : "flex flex-col gap-5"
+                    isGridView ? "grid gap-5 grid-cols-1" : "flex flex-col gap-5"
                   }
                 >
                   {filteredPrograms.map((program) => {
@@ -1080,68 +1067,144 @@ function App(): JSX.Element {
                         ? "Size unavailable. आकार उपलब्ध नहीं।"
                         : "Connect folder to view size. फोल्डर कनेक्ट करें।");
 
+                    if (isGridView) {
+                      return (
+                        <Card
+                          key={program.id}
+                          className="flex flex-col overflow-hidden border border-border bg-card"
+                        >
+                          {program.photoDataUrl ? (
+                            <img
+                              src={program.photoDataUrl}
+                              alt={`${program.name} preview`}
+                              className="h-48 w-full object-cover"
+                            />
+                          ) : (
+                            <div className="flex h-48 w-full items-center justify-center bg-muted text-6xl text-muted-foreground/70">
+                              💡
+                            </div>
+                          )}
+                          <CardContent className="flex flex-1 flex-col gap-3 p-4 sm:p-5">
+                            <div className="space-y-2">
+                              <h3 className="text-xl font-semibold text-foreground">{program.name}</h3>
+                              <div className="space-y-1 text-sm text-muted-foreground">
+                                <p>
+                                  <span className="font-medium text-foreground">Uploaded | अपलोड:</span>{" "}
+                                  {new Date(program.dateAdded).toLocaleString()}
+                                </p>
+                                <p>
+                                  <span className="font-medium text-foreground">File | फाइल:</span>{" "}
+                                  {program.originalLedName}
+                                </p>
+                                <p>
+                                  <span className="font-medium text-foreground">Size | आकार:</span>{" "}
+                                  {sizeDisplay}
+                                </p>
+                              </div>
+                            </div>
+                            {program.description && (
+                              <p className="rounded-xl border border-border bg-muted/40 px-3 py-2 text-base text-foreground leading-relaxed">
+                                {program.description}
+                              </p>
+                            )}
+                            <div className="mt-auto flex flex-col gap-3">
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                onClick={() => handleCopyToSdCard(program)}
+                                className="h-auto flex-wrap gap-2 whitespace-normal py-3 text-center text-base"
+                                disabled={isCopying}
+                              >
+                                <HardDrive className="h-6 w-6 flex-shrink-0 text-red-500" aria-hidden="true" />
+                                <span className="leading-tight">
+                                  {isCopying ? "Copying… कॉपी जारी…" : "Copy to SD Card | SD कार्ड में कॉपी करें"}
+                                </span>
+                              </Button>
+                              {copyStatus && (
+                                <div className="space-y-1 rounded-xl border border-border bg-muted/40 p-3" role="status" aria-live="polite">
+                                  <div className="h-2 w-full rounded-full bg-muted">
+                                    <div
+                                      className={`h-full rounded-full ${
+                                        copyStatus.status === "error" ? "bg-red-500" : "bg-primary"
+                                      }`}
+                                      style={{ width: `${copyStatus.progress}%` }}
+                                    />
+                                  </div>
+                                  <p className="text-sm font-medium text-foreground">
+                                    {copyStatus.status === "copying"
+                                      ? `Copying… ${copyStatus.progress}%`
+                                      : copyStatus.status === "success"
+                                      ? "Copied successfully! कॉपी हो गया।"
+                                      : "Copy failed. कॉपी नहीं हो पाया।"}
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => handleDownload(program)}
+                                className="flex-1 min-w-[140px]"
+                              >
+                                <Download className="mr-2 h-5 w-5" aria-hidden="true" />
+                                Download | डाउनलोड
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => {
+                                  setEditingProgramId(program.id);
+                                  setFormData({
+                                    programName: program.name,
+                                    ledFile: null,
+                                    description: program.description ?? "",
+                                    photoFile: null,
+                                  });
+                                  setActiveTab("add");
+                                  setShouldRemovePhoto(false);
+                                }}
+                                className="flex-1 min-w-[140px]"
+                              >
+                                <Pencil className="mr-2 h-5 w-5" aria-hidden="true" />
+                                Edit | एडिट
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="destructive"
+                                onClick={() => handleDelete(program.id)}
+                                className="flex-1 min-w-[140px]"
+                              >
+                                <Trash2 className="mr-2 h-5 w-5" aria-hidden="true" />
+                                Delete | डिलीट
+                              </Button>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      );
+                    }
+
                     return (
-                      <Card
-                        key={program.id}
-                        className={`flex overflow-hidden border border-border bg-card ${
-                          isListView ? "flex-col sm:flex-row" : "flex-col"
-                        }`}
-                      >
-                      <div className={isListView ? "sm:w-48 sm:flex-shrink-0" : undefined}>
-                        {program.photoDataUrl ? (
-                          <img
-                            src={program.photoDataUrl}
-                            alt={`${program.name} preview`}
-                            className={`h-48 w-full object-cover ${
-                              isListView ? "sm:h-full sm:w-48" : ""
-                            }`}
-                          />
-                        ) : (
-                          <div
-                            className={`flex h-48 w-full items-center justify-center bg-muted text-6xl text-muted-foreground/70 ${
-                              isListView ? "sm:h-full sm:w-48" : ""
-                            }`}
-                          >
-                            💡
+                      <Card key={program.id} className="border border-border bg-card">
+                        <CardContent className="flex flex-col gap-3 p-4 sm:p-5">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="truncate text-lg font-semibold text-foreground">{program.name}</p>
+                              <p className="text-sm text-muted-foreground">Size | आकार: {sizeDisplay}</p>
+                            </div>
+                            <Button
+                              type="button"
+                              size="icon"
+                              variant="secondary"
+                              onClick={() => handleCopyToSdCard(program)}
+                              disabled={isCopying}
+                              className="h-10 w-10"
+                              aria-label={`Copy ${program.name} to SD card`}
+                            >
+                              <HardDrive className="h-5 w-5 text-red-500" aria-hidden="true" />
+                              <span className="sr-only">Copy to SD Card | SD कार्ड में कॉपी करें</span>
+                            </Button>
                           </div>
-                        )}
-                      </div>
-                      <CardContent className="flex flex-1 flex-col gap-3 p-4 sm:p-5">
-                        <div className="space-y-2">
-                          <h3 className="text-xl font-semibold text-foreground">{program.name}</h3>
-                          <div className="space-y-1 text-sm text-muted-foreground">
-                            <p>
-                              <span className="font-medium text-foreground">Uploaded | अपलोड:</span>{" "}
-                              {new Date(program.dateAdded).toLocaleString()}
-                            </p>
-                            <p>
-                              <span className="font-medium text-foreground">File | फाइल:</span>{" "}
-                              {program.originalLedName}
-                            </p>
-                            <p>
-                              <span className="font-medium text-foreground">Size | आकार:</span>{" "}
-                              {sizeDisplay}
-                            </p>
-                          </div>
-                        </div>
-                        {program.description && (
-                          <p className="rounded-xl border border-border bg-muted/40 px-3 py-2 text-base text-foreground leading-relaxed">
-                            {program.description}
-                          </p>
-                        )}
-                        <div className="mt-auto flex flex-col gap-3">
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            onClick={() => handleCopyToSdCard(program)}
-                            className="h-auto flex-wrap gap-2 whitespace-normal py-3 text-center text-base"
-                            disabled={isCopying}
-                          >
-                            <HardDrive className="h-6 w-6 flex-shrink-0 text-red-500" aria-hidden="true" />
-                            <span className="leading-tight">
-                              {isCopying ? "Copying… कॉपी जारी…" : "Copy to SD Card | SD कार्ड में कॉपी करें"}
-                            </span>
-                          </Button>
                           {copyStatus && (
                             <div className="space-y-1 rounded-xl border border-border bg-muted/40 p-3" role="status" aria-live="polite">
                               <div className="h-2 w-full rounded-full bg-muted">
@@ -1152,37 +1215,18 @@ function App(): JSX.Element {
                                   style={{ width: `${copyStatus.progress}%` }}
                                 />
                               </div>
-                              <p
-                                className={`text-xs ${
-                                  copyStatus.status === "error"
-                                    ? "text-red-600"
-                                    : "text-muted-foreground"
-                                }`}
-                              >
+                              <p className="text-sm font-medium text-foreground">
                                 {copyStatus.status === "copying"
                                   ? `Copying… ${copyStatus.progress}%`
                                   : copyStatus.status === "success"
-                                  ? "Copy complete! कॉपी पूरी हुई।"
-                                  : "Copy failed. कॉपी नहीं हो पायी।"}
+                                  ? "Copied successfully! कॉपी हो गया।"
+                                  : "Copy failed. कॉपी नहीं हो पाया।"}
                               </p>
                             </div>
                           )}
-                          <Button type="button" variant="secondary" onClick={() => handleStartEdit(program)}>
-                            <Pencil className="h-5 w-5" aria-hidden="true" />
-                            ✏️ Edit Details | विवरण बदलें
-                          </Button>
-                          <Button type="button" variant="destructive" onClick={() => handleDelete(program.id)}>
-                            <Trash2 className="h-6 w-6" aria-hidden="true" />
-                            🗑️ Delete | हटाएं
-                          </Button>
-                          <Button type="button" variant="success" onClick={() => handleDownload(program)}>
-                            <Download className="h-6 w-6" aria-hidden="true" />
-                            📥 Download | डाउनलोड करें
-                          </Button>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  );
+                        </CardContent>
+                      </Card>
+                    );
                   })}
                 </div>
               ) : (
