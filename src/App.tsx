@@ -18,6 +18,8 @@ import {
   Pencil,
   LayoutGrid,
   List,
+  FolderOpen,
+  Instagram,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -121,7 +123,7 @@ function App(): JSX.Element {
   const [isFileSystemSupported, setIsFileSystemSupported] = useState(false);
   const [isLoadingPrograms, setIsLoadingPrograms] = useState(true);
   const [hasPersistentStorage, setHasPersistentStorage] = useState<boolean | null>(null);
-  const [catalogView, setCatalogView] = useState<"grid" | "list">("grid");
+  const [catalogView, setCatalogView] = useState<"grid" | "list">("list");
   const [copyStatuses, setCopyStatuses] = useState<Record<string, CopyStatus>>({});
   const [searchTerm, setSearchTerm] = useState("");
 
@@ -896,7 +898,7 @@ function App(): JSX.Element {
   return (
     <div className="min-h-screen bg-background">
       <header className="sticky top-0 z-10 bg-primary px-4 py-6 text-primary-foreground shadow-md">
-        <div className="relative mx-auto flex max-w-4xl flex-col gap-1 text-center sm:text-left">
+        <div className="relative mx-auto flex max-w-4xl flex-col gap-3 text-center sm:flex-row sm:items-center sm:justify-between sm:text-left">
           <button
             type="button"
             className="hidden-troubleshoot-button absolute -top-1 -right-1 text-xs text-primary-foreground/80"
@@ -905,8 +907,19 @@ function App(): JSX.Element {
           >
             Reset | रीसेट
           </button>
-          <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">Bansal Lights - LED Catalog</h1>
-          <p className="text-lg text-primary-foreground/90">अपने LED प्रोग्राम्स यहाँ सेव करें</p>
+          <div className="flex flex-col gap-1">
+            <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">Bansal Lights - LED Catalog</h1>
+            <p className="text-lg text-primary-foreground/90">अपने LED प्रोग्राम्स यहाँ सेव करें</p>
+          </div>
+          <a
+            href="https://www.instagram.com/bansallights"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center justify-center gap-2 self-center rounded-full border border-primary-foreground/40 bg-primary-foreground/10 px-4 py-2 text-sm font-medium text-primary-foreground transition hover:bg-primary-foreground/20"
+          >
+            <Instagram className="h-5 w-5" aria-hidden="true" />
+            <span>Follow @bansallights</span>
+          </a>
         </div>
       </header>
 
@@ -994,13 +1007,16 @@ function App(): JSX.Element {
 
         {isViewTab ? (
           <section className="flex flex-col gap-4">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <h2 className="text-2xl font-semibold">
-                Saved Programs | सेव किए गए प्रोग्राम
-                <span className="ml-2 text-sm font-normal text-muted-foreground">
-                  Total: {programs.length}
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-3 sm:justify-start">
+                <h2 className="text-2xl font-semibold">
+                  Saved Programs | सेव किए गए प्रोग्राम
+                </h2>
+                <span className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-sm font-semibold text-primary">
+                  <FolderOpen className="h-4 w-4" aria-hidden="true" />
+                  <span>Total Programs | कुल प्रोग्राम: {programs.length}</span>
                 </span>
-              </h2>
+              </div>
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
                 <div className="flex items-center gap-2">
                   <span className="hidden text-sm font-medium text-muted-foreground sm:inline">
