@@ -965,10 +965,82 @@ function App(): JSX.Element {
       await metadataWritable.write(`${JSON.stringify(metadata, null, 2)}\n`);
       await metadataWritable.close();
 
+      let syncOutcome: "skipped" | "success" | "error" = "skipped";
+
+      const isHttpContext =
+        typeof window !== "undefined" && window.location?.protocol !== "file:";
+
+      if (typeof fetch === "function" && isHttpContext) {
+        try {
+          const syncPayload = {
+            exportedAt: metadata.exportedAt,
+            programCount: metadata.programCount,
+            programs: exportedPrograms.map(
+              ({
+                id,
+                name,
+                description,
+                dateAdded,
+                originalLedName,
+                storedFileName,
+                exportedLedFileName,
+                fileSizeBytes,
+                photoDataUrl,
+                notes,
+              }) => ({
+                id,
+                name,
+                description,
+                dateAdded,
+                originalLedName,
+                storedFileName,
+                exportedLedFileName,
+                fileSizeBytes,
+                photoDataUrl,
+                ...(notes ? { notes } : {}),
+              })
+            ),
+          };
+
+          const response = await fetch("/api/sync", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(syncPayload),
+          });
+
+          if (!response.ok) {
+            const errorText = await response.text().catch(() => "");
+            throw new Error(errorText || `Unexpected response status: ${response.status}`);
+          }
+
+          syncOutcome = "success";
+          console.log("☁️ Catalog metadata synced to Cloudflare", {
+            exportedAt: metadata.exportedAt,
+            programCount: metadata.programCount,
+          });
+        } catch (error) {
+          syncOutcome = "error";
+          console.error("⚠️ Catalog metadata sync failed", error);
+        }
+      } else {
+        console.info("ℹ️ Skipping cloud sync in offline context");
+      }
+
+      let feedbackMessage = `Export complete in folder "${folderName}". एक्सपोर्ट पूरा हुआ।`;
+
+      if (syncOutcome === "success") {
+        feedbackMessage = `Export complete in folder "${folderName}" and synced online. एक्सपोर्ट पूरा हुआ और डेटा ऑनलाइन सेव हो गया।`;
+      } else if (syncOutcome === "error") {
+        feedbackMessage = `Export complete in folder "${folderName}" but online sync failed. एक्सपोर्ट पूरा हुआ पर ऑनलाइन सिंक नहीं हो पाया।`;
+      }
+
       setFeedback({
         type: "success",
-        message: `Export complete in folder "${folderName}". एक्सपोर्ट पूरा हुआ।`,
+        message: feedbackMessage,
       });
+
       console.log("📦 Catalog exported", { folderName, programCount: programs.length });
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") {
