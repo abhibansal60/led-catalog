@@ -1262,7 +1262,7 @@ function App(): JSX.Element {
         {isViewTab ? (
           <section className="flex flex-col gap-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex flex-wrap items-center justify-between gap-3 sm:justify-start">
+              <div className="flex flex-col items-start gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
                 <h2 className="text-2xl font-semibold">
                   <BilingualText
                     primary="Saved Programs"
@@ -1279,7 +1279,7 @@ function App(): JSX.Element {
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="hidden text-sm font-medium text-muted-foreground sm:inline">Layout:</span>
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
                     <Button
                       type="button"
                       size="sm"
@@ -1343,7 +1343,9 @@ function App(): JSX.Element {
               hasFilteredPrograms ? (
                 <div
                   className={
-                    isGridView ? "grid gap-5 grid-cols-1" : "flex flex-col gap-5"
+                    isGridView
+                      ? "grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3"
+                      : "flex flex-col gap-5"
                   }
                 >
                   {filteredPrograms.map((program) => {
@@ -1448,12 +1450,12 @@ function App(): JSX.Element {
                                 </div>
                               )}
                             </div>
-                            <div className="flex flex-wrap gap-2">
+                            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
                               <Button
                                 type="button"
                                 variant="outline"
                                 onClick={() => handleDownload(program)}
-                                className="flex-1 min-w-[140px]"
+                                className="w-full sm:flex-1"
                               >
                                 <Download className="h-5 w-5" aria-hidden="true" />
                                 <BilingualText
@@ -1478,7 +1480,7 @@ function App(): JSX.Element {
                                   setActiveTab("add");
                                   setShouldRemovePhoto(false);
                                 }}
-                                className="flex-1 min-w-[140px]"
+                                className="w-full sm:flex-1"
                               >
                                 <Pencil className="h-5 w-5" aria-hidden="true" />
                                 <BilingualText
@@ -1493,7 +1495,7 @@ function App(): JSX.Element {
                                 type="button"
                                 variant="ghost"
                                 onClick={() => handleDelete(program.id)}
-                                className="flex-1 min-w-[140px] border border-transparent text-red-600 hover:border-red-100 hover:bg-red-50"
+                                className="w-full border border-transparent text-red-600 hover:border-red-100 hover:bg-red-50 sm:flex-1"
                               >
                                 <Trash2 className="h-5 w-5" aria-hidden="true" />
                                 <BilingualText
@@ -1513,22 +1515,27 @@ function App(): JSX.Element {
                     return (
                       <Card key={program.id} className="border border-border bg-card">
                         <CardContent className="flex flex-col gap-3 p-4 sm:p-5">
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="min-w-0">
+                          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                            <div className="min-w-0 space-y-1">
                               <p className="truncate text-lg font-semibold text-foreground">{program.name}</p>
                               <p className="text-sm text-muted-foreground">Size: {sizeDisplay}</p>
                             </div>
                             <Button
                               type="button"
-                              size="icon"
                               variant="success"
                               onClick={() => handleCopyToSdCard(program)}
                               disabled={isCopying}
-                              className="h-10 w-10 shadow-lg shadow-emerald-200/50"
+                              className="h-auto w-full gap-3 px-4 py-3 text-sm shadow-lg shadow-emerald-200/50 sm:w-auto"
                               aria-label={`Copy ${program.name} to SD card`}
                             >
                               <HardDrive className="h-5 w-5 text-white" aria-hidden="true" />
-                              <span className="sr-only">Copy to SD Card</span>
+                              <BilingualText
+                                primary={isCopying ? "Copying…" : "Copy to SD Card"}
+                                secondary={isCopying ? "कॉपी जारी…" : "SD कार्ड में कॉपी करें"}
+                                align="start"
+                                className="items-start text-left"
+                                secondaryClassName="text-xs text-emerald-100/90"
+                              />
                             </Button>
                           </div>
                           {copyStatus && (
@@ -1784,7 +1791,7 @@ function App(): JSX.Element {
                     </div>
                   )}
                   {shouldRemovePhoto && !formData.photoFile && (
-                    <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-dashed border-red-300 bg-red-50 px-4 py-2 text-sm text-red-700">
+                    <div className="flex flex-col items-start gap-2 rounded-xl border border-dashed border-red-300 bg-red-50 px-4 py-2 text-sm text-red-700 sm:flex-row sm:items-center sm:justify-between">
                       <BilingualText
                         primary="Photo will be removed on save."
                         secondary="फोटो सेव करते समय हट जाएगी।"
