@@ -20,6 +20,8 @@ import {
   List,
   FolderOpen,
   Instagram,
+  Upload,
+  Loader2,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -111,6 +113,24 @@ const formatFileSize = (bytes?: number | null): string => {
   return `${formatter.format(size)} ${units[unitIndex]}`;
 };
 
+type ExportedProgramMetadata = {
+  id?: string;
+  name?: string;
+  description?: string;
+  dateAdded?: string;
+  originalLedName?: string;
+  storedFileName?: string;
+  exportedLedFileName?: string | null;
+  fileSizeBytes?: number | null;
+  photoDataUrl?: string | null;
+};
+
+type CatalogExportMetadata = {
+  exportedAt?: string;
+  programCount?: number;
+  programs?: ExportedProgramMetadata[];
+};
+
 type BilingualTextProps = {
   primary: React.ReactNode;
   secondary?: React.ReactNode;
@@ -159,6 +179,7 @@ function App(): JSX.Element {
   const [copyStatuses, setCopyStatuses] = useState<Record<string, CopyStatus>>({});
   const [searchTerm, setSearchTerm] = useState("");
   const [isExporting, setIsExporting] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -1052,8 +1073,247 @@ function App(): JSX.Element {
         type: "error",
         message: "Export failed. एक्सपोर्ट नहीं हो पाया.",
       });
+  } finally {
+    setIsExporting(false);
+  }
+  };
+
+  const handleImportCatalog = async () => {
+    if (!isFileSystemSupported) {
+      setFeedback({
+        type: "error",
+        message: "Browser unsupported. ब्राउज़र यह फीचर नहीं चला सकता.",
+      });
+      return;
+    }
+
+    setIsImporting(true);
+
+    try {
+      const importDirectory = await window.showDirectoryPicker({
+        id: "led-catalog-import",
+        mode: "read",
+      });
+
+      let metadataHandle: FileSystemFileHandle;
+      try {
+        metadataHandle = await importDirectory.getFileHandle("catalog.json", { create: false });
+      } catch (error) {
+        setFeedback({
+          type: "error",
+          message: "catalog.json missing in backup. बैकअप में catalog.json नहीं मिला.",
+        });
+        return;
+      }
+
+      const metadataFile = await metadataHandle.getFile();
+      const metadataText = await metadataFile.text();
+
+      let metadata: CatalogExportMetadata;
+      try {
+        metadata = JSON.parse(metadataText) as CatalogExportMetadata;
+      } catch (error) {
+        setFeedback({
+          type: "error",
+          message: "Backup file is corrupted. बैकअप फाइल सही नहीं है.",
+        });
+        return;
+      }
+
+      const exportedPrograms = Array.isArray(metadata.programs) ? metadata.programs : [];
+
+      if (exportedPrograms.length === 0) {
+        setFeedback({
+          type: "error",
+          message: "Backup is empty. बैकअप खाली है.",
+        });
+        return;
+      }
+
+      const normalizeString = (value: unknown): string | null =>
+        typeof value === "string" ? value.trim() : null;
+
+      const existingIds = new Set(programs.map((program) => program.id));
+      const skippedExisting: string[] = [];
+      const skippedMissing: string[] = [];
+      const candidates: Array<{ entry: ExportedProgramMetadata; file: File }> = [];
+
+      for (const entry of exportedPrograms) {
+        const displayName = normalizeString(entry.name) ?? "Imported Program";
+        const candidateFileName =
+          normalizeString(entry.exportedLedFileName) ??
+          normalizeString(entry.originalLedName) ??
+          normalizeString(entry.storedFileName);
+
+        if (!candidateFileName) {
+          skippedMissing.push(displayName);
+          continue;
+        }
+
+        let file: File;
+        try {
+          const fileHandle = await importDirectory.getFileHandle(candidateFileName, { create: false });
+          file = await fileHandle.getFile();
+        } catch (error) {
+          console.warn("⚠️ Missing LED file during import", { candidateFileName, error });
+          skippedMissing.push(displayName);
+          continue;
+        }
+
+        const entryId = normalizeString(entry.id);
+        if (entryId && existingIds.has(entryId)) {
+          skippedExisting.push(displayName);
+          continue;
+        }
+
+        candidates.push({ entry, file });
+      }
+
+      if (candidates.length === 0) {
+        let message = "No new programs to import. नया डेटा उपलब्ध नहीं है.";
+
+        if (skippedMissing.length > 0 && skippedExisting.length === 0) {
+          message = "Files missing in backup. बैकअप में जरूरी फाइल नहीं मिली।";
+        } else if (skippedExisting.length > 0 && skippedMissing.length === 0) {
+          message = "All programs already in catalog. सारे प्रोग्राम पहले से मौजूद हैं.";
+        } else if (skippedMissing.length > 0 && skippedExisting.length > 0) {
+          message = "Nothing imported: files missing or already saved. कुछ भी इम्पोर्ट नहीं हुआ.";
+        }
+
+        setFeedback({
+          type: "error",
+          message,
+        });
+        return;
+      }
+
+      const totalBytes = candidates.reduce((sum, { file }) => sum + file.size, 0);
+      const hasSpace = await ensureStorageCapacity(totalBytes);
+      if (!hasSpace) {
+        return;
+      }
+
+      const targetDirectory = await ensureDirectoryAccess();
+      if (!targetDirectory) {
+        return;
+      }
+
+      const importedPrograms: Program[] = [];
+      const failedImports: string[] = [];
+
+      for (const { entry, file } of candidates) {
+        const displayName = normalizeString(entry.name) ?? file.name;
+        const preferredId = normalizeString(entry.id);
+        let newId =
+          preferredId && !existingIds.has(preferredId)
+            ? preferredId
+            : `${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+        while (existingIds.has(newId)) {
+          newId = `${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+        }
+
+        const storedFileName = `${newId}-${sanitizeFileName(file.name)}`;
+        let createdFileName: string | null = null;
+
+        try {
+          const targetFileHandle = await targetDirectory.getFileHandle(storedFileName, { create: true });
+          createdFileName = storedFileName;
+          const writable = await targetFileHandle.createWritable();
+          await writable.write(file);
+          await writable.close();
+
+          const importedProgram: Program = {
+            id: newId,
+            name: normalizeString(entry.name) ?? file.name.replace(/\.[^.]+$/, ""),
+            description: normalizeString(entry.description) ?? "",
+            dateAdded: normalizeString(entry.dateAdded) ?? new Date().toISOString(),
+            originalLedName: normalizeString(entry.originalLedName) ?? file.name,
+            storedFileName,
+            photoDataUrl: typeof entry.photoDataUrl === "string" ? entry.photoDataUrl : null,
+            fileSizeBytes: file.size,
+          };
+
+          await saveStoredProgram(importedProgram);
+          existingIds.add(newId);
+          importedPrograms.push(importedProgram);
+        } catch (error) {
+          console.error("⚠️ Failed to import program", { displayName, error });
+          if (createdFileName) {
+            try {
+              await targetDirectory.removeEntry(createdFileName);
+            } catch (cleanupError) {
+              console.warn("⚠️ Could not clean up failed import file", cleanupError);
+            }
+          }
+          failedImports.push(displayName);
+        }
+      }
+
+      if (importedPrograms.length === 0) {
+        const messageParts: string[] = [];
+        if (failedImports.length > 0) {
+          messageParts.push(
+            `Could not import ${failedImports.length} program${failedImports.length === 1 ? "" : "s"}. ${failedImports.length} प्रोग्राम इम्पोर्ट नहीं हो पाए।`
+          );
+        }
+        if (skippedMissing.length > 0) {
+          messageParts.push(
+            `Files missing for ${skippedMissing.length} programs. ${skippedMissing.length} प्रोग्राम की फाइल नहीं मिली।`
+          );
+        }
+        setFeedback({
+          type: "error",
+          message: messageParts.join(" ") || "Import failed. इम्पोर्ट नहीं हो पाया.",
+        });
+        return;
+      }
+
+      setPrograms((prev) => sortPrograms([...prev, ...importedPrograms]));
+      setActiveTab("view");
+
+      const messageParts: string[] = [];
+      messageParts.push(
+        `Imported ${importedPrograms.length} program${importedPrograms.length === 1 ? "" : "s"}. ${importedPrograms.length} प्रोग्राम इम्पोर्ट हुए।`
+      );
+      if (skippedExisting.length > 0) {
+        messageParts.push(
+          `${skippedExisting.length} already existed. ${skippedExisting.length} पहले से सेव थे।`
+        );
+      }
+      if (skippedMissing.length > 0) {
+        messageParts.push(
+          `${skippedMissing.length} files missing. ${skippedMissing.length} फाइल नहीं मिली।`
+        );
+      }
+      if (failedImports.length > 0) {
+        messageParts.push(
+          `${failedImports.length} could not import. ${failedImports.length} इम्पोर्ट नहीं हो पाए।`
+        );
+      }
+
+      setFeedback({
+        type: skippedMissing.length > 0 || failedImports.length > 0 ? "error" : "success",
+        message: messageParts.join(" "),
+      });
+
+      console.log("📥 Catalog import complete", {
+        imported: importedPrograms.length,
+        skippedExisting: skippedExisting.length,
+        skippedMissing: skippedMissing.length,
+        failed: failedImports.length,
+      });
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        console.log("⚠️ Catalog import cancelled by user");
+        return;
+      }
+      console.error("❌ Catalog import failed", error);
+      setFeedback({
+        type: "error",
+        message: "Import failed. इम्पोर्ट नहीं हो पाया.",
+      });
     } finally {
-      setIsExporting(false);
+      setIsImporting(false);
     }
   };
 
@@ -1222,27 +1482,151 @@ function App(): JSX.Element {
           </div>
         )}
 
-        <div className="mb-6 flex flex-col gap-2 rounded-2xl bg-card p-2 shadow-sm sm:flex-row">
-          <Button
-            type="button"
-            variant={isViewTab ? "primary" : "ghost"}
-            className="w-full flex-col gap-1 sm:flex-1"
-            onClick={() => setActiveTab("view")}
-            aria-pressed={isViewTab}
+        <section className="mb-6 rounded-2xl border border-border bg-card/70 p-4 shadow-sm">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="space-y-1">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                Quick actions · त्वरित क्रियाएँ
+              </h2>
+              <BilingualText
+                primary="Add new programs easily. Backup tools stay within reach without crowding the page."
+                secondary="नए प्रोग्राम आसानी से जोड़ें। बैकअप विकल्प पास में रहें लेकिन पेज पर भीड़ न बनाएं।"
+                align="start"
+                className="text-left text-sm text-muted-foreground"
+                secondaryClassName="text-xs text-muted-foreground/80"
+              />
+            </div>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+              <Button
+                type="button"
+                variant="secondary"
+                className="w-full justify-center gap-3 px-5 py-3 sm:w-auto"
+                onClick={() => {
+                  setActiveTab("add");
+                }}
+              >
+                <PlusCircle className="h-5 w-5" aria-hidden="true" />
+                <BilingualText
+                  primary="Add Program"
+                  secondary="नया प्रोग्राम जोड़ें"
+                  align="start"
+                  className="items-start text-left"
+                  secondaryClassName="text-xs text-muted-foreground"
+                />
+              </Button>
+              <div className="flex w-full flex-col gap-2 rounded-2xl border border-dashed border-border/70 bg-muted/40 p-3 text-left sm:w-auto sm:flex-row sm:items-center sm:gap-3 sm:p-2">
+                <div className="flex flex-col text-xs font-medium uppercase tracking-wide text-muted-foreground sm:flex-row sm:items-center sm:gap-2">
+                  <span>Backup tools</span>
+                  <span className="text-[11px] font-normal capitalize text-muted-foreground/80 sm:text-xs">
+                    बैकअप विकल्प
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-11 w-11 rounded-xl border border-border/60 bg-background/80 text-muted-foreground hover:text-foreground"
+                    onClick={() => {
+                      void handleImportCatalog();
+                    }}
+                    disabled={isImporting}
+                    aria-busy={isImporting}
+                    title={isImporting ? "Importing backup…" : "Import backup"}
+                  >
+                    {isImporting ? (
+                      <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
+                    ) : (
+                      <Upload className="h-5 w-5" aria-hidden="true" />
+                    )}
+                    <span className="sr-only">{isImporting ? "Importing…" : "Import backup · बैकअप जोड़ें"}</span>
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-11 w-11 rounded-xl border border-border/60 bg-background/80 text-muted-foreground hover:text-foreground"
+                    onClick={() => {
+                      void handleExportCatalog();
+                    }}
+                    disabled={isExporting}
+                    aria-busy={isExporting}
+                    title={isExporting ? "Exporting backup…" : "Export backup"}
+                  >
+                    {isExporting ? (
+                      <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
+                    ) : (
+                      <Download className="h-5 w-5" aria-hidden="true" />
+                    )}
+                    <span className="sr-only">{isExporting ? "Exporting…" : "Export backup · बैकअप सेव करें"}</span>
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <div className="mb-6">
+          <div
+            className="flex flex-col gap-2 rounded-2xl border border-border bg-card/80 p-3 shadow-sm sm:flex-row"
+            role="tablist"
+            aria-label="Catalog sections"
           >
-            <span aria-hidden="true" className="text-2xl">📂</span>
-            <BilingualText primary="View Catalog" secondary="कैटलॉग देखें" />
-          </Button>
-          <Button
-            type="button"
-            variant={!isViewTab ? "primary" : "ghost"}
-            className="w-full flex-col gap-1 sm:flex-1"
-            onClick={() => setActiveTab("add")}
-            aria-pressed={!isViewTab}
-          >
-            <span aria-hidden="true" className="text-2xl">➕</span>
-            <BilingualText primary="Add New Program" secondary="नया जोड़ें" />
-          </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              id="catalog-view-tab"
+              role="tab"
+              aria-selected={isViewTab}
+              aria-controls="catalog-view-panel"
+              onClick={() => setActiveTab("view")}
+              className={cn(
+                "w-full justify-start gap-3 rounded-xl px-4 py-3 text-base font-semibold transition sm:flex-1",
+                isViewTab
+                  ? "bg-primary text-primary-foreground shadow-md shadow-primary/40"
+                  : "bg-transparent text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+              )}
+            >
+              <FolderOpen className="h-5 w-5" aria-hidden="true" />
+              <BilingualText
+                primary="View Catalog"
+                secondary="कैटलॉग देखें"
+                align="start"
+                className="items-start text-left"
+                secondaryClassName={cn(
+                  "text-xs",
+                  isViewTab ? "text-primary-foreground/80" : "text-muted-foreground"
+                )}
+              />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              id="catalog-add-tab"
+              role="tab"
+              aria-selected={!isViewTab}
+              aria-controls="catalog-add-panel"
+              onClick={() => setActiveTab("add")}
+              className={cn(
+                "w-full justify-start gap-3 rounded-xl px-4 py-3 text-base font-semibold transition sm:flex-1",
+                !isViewTab
+                  ? "bg-primary text-primary-foreground shadow-md shadow-primary/40"
+                  : "bg-transparent text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+              )}
+            >
+              <PlusCircle className="h-5 w-5" aria-hidden="true" />
+              <BilingualText
+                primary="Add New Program"
+                secondary="नया जोड़ें"
+                align="start"
+                className="items-start text-left"
+                secondaryClassName={cn(
+                  "text-xs",
+                  !isViewTab ? "text-primary-foreground/80" : "text-muted-foreground"
+                )}
+              />
+            </Button>
+          </div>
         </div>
 
         {feedback && (
@@ -1260,7 +1644,12 @@ function App(): JSX.Element {
         )}
 
         {isViewTab ? (
-          <section className="flex flex-col gap-4">
+          <section
+            id="catalog-view-panel"
+            role="tabpanel"
+            aria-labelledby="catalog-view-tab"
+            className="flex flex-col gap-4"
+          >
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex flex-col items-start gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
                 <h2 className="text-2xl font-semibold">
@@ -1303,25 +1692,6 @@ function App(): JSX.Element {
                       <span className="hidden sm:inline">List</span>
                     </Button>
                   </div>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                      void handleExportCatalog();
-                    }}
-                    disabled={isExporting}
-                    className="whitespace-nowrap px-3"
-                  >
-                    <Download className="h-5 w-5" aria-hidden="true" />
-                    <BilingualText
-                      primary={isExporting ? "Exporting…" : "Export Backup"}
-                      secondary={isExporting ? "एक्सपोर्ट जारी…" : "बैकअप सेव करें"}
-                      align="start"
-                      className="items-start text-left"
-                      secondaryClassName="text-xs text-muted-foreground"
-                    />
-                  </Button>
                 </div>
                 <Input
                   type="search"
@@ -1614,8 +1984,14 @@ function App(): JSX.Element {
             </div>
           </section>
         ) : (
-          <Card className="border border-border bg-card shadow-md">
-            <CardHeader className="flex flex-col gap-3">
+          <section
+            id="catalog-add-panel"
+            role="tabpanel"
+            aria-labelledby="catalog-add-tab"
+            className="flex flex-col"
+          >
+            <Card className="border border-border bg-card shadow-md">
+              <CardHeader className="flex flex-col gap-3">
               <div className="flex items-center gap-2">
                 {isEditing ? (
                   <Pencil className="h-7 w-7 text-primary" aria-hidden="true" />
@@ -1647,9 +2023,9 @@ function App(): JSX.Element {
                   ? "Update details or add a photo. Leave fields blank to keep current values. बदलाव करें या फोटो जोड़ें।"
                   : "LED फाइल चुनें और सेव करें। सब कुछ आपके फोन में सुरक्षित रहेगा।"}
               </CardDescription>
-            </CardHeader>
+              </CardHeader>
 
-            <CardContent className="space-y-5">
+              <CardContent className="space-y-5">
               <form className="flex flex-col gap-5" onSubmit={handleSubmit}>
                 <div className="flex flex-col gap-2">
                   <Label
@@ -1854,8 +2230,9 @@ function App(): JSX.Element {
                   </Button>
                 </div>
               </form>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          </section>
         )}
       </main>
     </div>
