@@ -158,6 +158,7 @@ function App(): JSX.Element {
   const [catalogView, setCatalogView] = useState<"grid" | "list">("list");
   const [copyStatuses, setCopyStatuses] = useState<Record<string, CopyStatus>>({});
   const [searchTerm, setSearchTerm] = useState("");
+  const [isExporting, setIsExporting] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -855,6 +856,135 @@ function App(): JSX.Element {
     }
   };
 
+  const handleExportCatalog = async () => {
+    if (programs.length === 0) {
+      setFeedback({
+        type: "error",
+        message: "No programs to export. एक्सपोर्ट करने के लिए कोई प्रोग्राम नहीं है.",
+      });
+      return;
+    }
+
+    if (!("showDirectoryPicker" in window)) {
+      setFeedback({
+        type: "error",
+        message: "Browser does not support export. ब्राउज़र एक्सपोर्ट नहीं कर सकता.",
+      });
+      return;
+    }
+
+    setIsExporting(true);
+
+    try {
+      const sourceDirectory = await ensureDirectoryAccess();
+      if (!sourceDirectory) {
+        return;
+      }
+
+      const exportRoot = await window.showDirectoryPicker({ mode: "readwrite" });
+      const timestamp = new Date();
+      const folderName = `led-catalog-export-${timestamp.toISOString().replace(/[:.]/g, "-")}`;
+      const exportDirectory = await exportRoot.getDirectoryHandle(folderName, { create: true });
+
+      const exportedPrograms: Array<{
+        id: string;
+        name: string;
+        description: string;
+        dateAdded: string;
+        originalLedName: string;
+        storedFileName: string;
+        exportedLedFileName: string | null;
+        fileSizeBytes: number | null | undefined;
+        photoDataUrl: string | null;
+        notes?: string;
+      }> = [];
+
+      const usedFileNames = new Set<string>();
+
+      const getExportFileName = (program: Program, index: number): string => {
+        const defaultBase = program.originalLedName
+          ? program.originalLedName.replace(/\.[^.]+$/, "")
+          : program.name || `program-${index + 1}`;
+        const sanitizedBase = sanitizeFileName(defaultBase) || `program-${index + 1}`;
+        const extensionMatch = program.originalLedName.match(/\.[^.]+$/);
+        const extension = extensionMatch ? extensionMatch[0] : ".led";
+
+        let candidate = `${sanitizedBase}${extension}`;
+        let suffix = 2;
+        while (usedFileNames.has(candidate)) {
+          candidate = `${sanitizedBase}-${suffix}${extension}`;
+          suffix += 1;
+        }
+        usedFileNames.add(candidate);
+        return candidate;
+      };
+
+      for (const [index, program] of programs.entries()) {
+        let exportedLedFileName: string | null = null;
+        let ledSize: number | null | undefined = program.fileSizeBytes;
+        let notes: string | undefined;
+
+        try {
+          const sourceFileHandle = await sourceDirectory.getFileHandle(program.storedFileName, { create: false });
+          const sourceFile = await sourceFileHandle.getFile();
+          ledSize = sourceFile.size;
+          const exportFileName = getExportFileName(program, index);
+          const targetFileHandle = await exportDirectory.getFileHandle(exportFileName, { create: true });
+          const writable = await targetFileHandle.createWritable();
+          await writable.write(sourceFile);
+          await writable.close();
+          exportedLedFileName = exportFileName;
+        } catch (error) {
+          console.warn("⚠️ Failed to export LED file", { id: program.id, error });
+          notes = "LED file missing or permission denied";
+        }
+
+        exportedPrograms.push({
+          id: program.id,
+          name: program.name,
+          description: program.description,
+          dateAdded: program.dateAdded,
+          originalLedName: program.originalLedName,
+          storedFileName: program.storedFileName,
+          exportedLedFileName,
+          fileSizeBytes: ledSize,
+          photoDataUrl: program.photoDataUrl,
+          ...(notes ? { notes } : {}),
+        });
+      }
+
+      const metadataHandle = await exportDirectory.getFileHandle("catalog.json", { create: true });
+      const metadataWritable = await metadataHandle.createWritable();
+      const metadata = {
+        exportedAt: new Date().toISOString(),
+        programCount: exportedPrograms.length,
+        instructions:
+          "Copy this entire folder to the new device and open catalog.json to view program details.",
+        programs: exportedPrograms,
+      };
+      await metadataWritable.write(`${JSON.stringify(metadata, null, 2)}\n`);
+      await metadataWritable.close();
+
+      setFeedback({
+        type: "success",
+        message: `Export complete in folder "${folderName}". एक्सपोर्ट पूरा हुआ।`,
+      });
+      console.log("📦 Catalog exported", { folderName, programCount: programs.length });
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        console.log("⚠️ Catalog export cancelled by user");
+        return;
+      }
+      console.error("❌ Catalog export failed", error);
+      setFeedback({
+        type: "error",
+        message: "Export failed. एक्सपोर्ट नहीं हो पाया.",
+      });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   const handleClearAll = async () => {
     const password = window.prompt(
       "Danger! Refresh cache will delete every saved program.\nखतरा! कैश रीफ्रेश करने से सारे प्रोग्राम हट जाएंगे।\n\nEnter password to continue."
@@ -1075,7 +1205,7 @@ function App(): JSX.Element {
                 </span>
               </div>
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <span className="hidden text-sm font-medium text-muted-foreground sm:inline">Layout:</span>
                   <div className="flex gap-2">
                     <Button
@@ -1101,6 +1231,25 @@ function App(): JSX.Element {
                       <span className="hidden sm:inline">List</span>
                     </Button>
                   </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      void handleExportCatalog();
+                    }}
+                    disabled={isExporting}
+                    className="whitespace-nowrap px-3"
+                  >
+                    <Download className="h-5 w-5" aria-hidden="true" />
+                    <BilingualText
+                      primary={isExporting ? "Exporting…" : "Export Backup"}
+                      secondary={isExporting ? "एक्सपोर्ट जारी…" : "बैकअप सेव करें"}
+                      align="start"
+                      className="items-start text-left"
+                      secondaryClassName="text-xs text-muted-foreground"
+                    />
+                  </Button>
                 </div>
                 <Input
                   type="search"
