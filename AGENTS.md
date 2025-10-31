@@ -13,23 +13,29 @@ Keep this document updated whenever an agent is added, modified, or retired.
 
 ## Active Automations
 
-### GitHub Actions — Cloudflare Pages Deploy
+### GitHub Actions — Cloudflare Pages & Netlify Deploy
 - **Location:** `.github/workflows/deploy.yaml`
 - **Triggers:**
   - `push` events to the `main` branch (production deploys).
   - `pull_request` events (preview deploys per branch).
-- **Purpose:** Build the Vite app and publish the `dist/` bundle plus Pages Functions to Cloudflare Pages.
+- **Purpose:** Build the Vite app and publish the `dist/` bundle plus Pages Functions to both Cloudflare Pages and Netlify.
 - **Secrets required:**
   - `CLOUDFLARE_API_TOKEN` — API token with “Cloudflare Pages: Edit” + “Workers KV Storage: Read/Write” for the target account.
   - `CLOUDFLARE_ACCOUNT_ID` — Cloudflare account identifier hosting the Pages project.
+  - `NETLIFY_AUTH_TOKEN` — Personal access token for the Netlify account that owns the site.
+  - `NETLIFY_SITE_ID` — Site identifier for the Netlify project receiving the deploys.
 - **Steps executed:**
   1. Check out the repository.
   2. Provision Node.js 20 and restore the npm cache.
   3. Install dependencies with `npm ci`.
   4. Build the production bundle with `npm run build`.
   5. Publish `dist/` to Cloudflare Pages via `cloudflare/pages-action@v1` (Wrangler 4.x), bundling Functions from `functions/`.
-- **Outputs:** Updated production deployment on the Cloudflare Pages project `led-catalog`, plus unique preview deployments for non-`main` branches (visible in both GitHub Actions logs and the Cloudflare Pages dashboard).
-- **Rollback:** Revert or cherry-pick an earlier commit and push to `main` (the workflow redeploys automatically). To pause deployments, disable the workflow in GitHub (`Actions` → `Deploy to Cloudflare Pages` → “Disable workflow”) and/or rotate the Cloudflare API token.
+  6. For pull requests, deploy the build to Netlify with a preview alias tied to the PR number.
+  7. For pushes to `main`, deploy the build to Netlify production.
+- **Outputs:**
+  - Updated production deployment on the Cloudflare Pages project `led-catalog`, plus unique preview deployments for non-`main` branches (visible in both GitHub Actions logs and the Cloudflare Pages dashboard).
+  - Preview deploy URLs for pull requests on Netlify (aliased as `pr-<number>`), and production updates on the linked Netlify site when `main` is updated.
+- **Rollback:** Revert or cherry-pick an earlier commit and push to `main` (the workflow redeploys automatically). To pause deployments, disable the workflow in GitHub (`Actions` → `Deploy to Cloudflare Pages` → “Disable workflow”) and/or rotate the Cloudflare API token. For Netlify, rotate/remove the auth token or pause the site in the Netlify UI.
 
 ### Local / On-Demand AI Assistant
 - **Purpose:** Generate code, docs, and operational updates on request.
