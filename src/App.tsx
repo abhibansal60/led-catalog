@@ -4,6 +4,7 @@ import React, {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
@@ -23,6 +24,8 @@ import {
   Instagram,
   Upload,
   Loader2,
+  FileJson,
+  FolderDown,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -214,12 +217,28 @@ type ExportedProgramMetadata = {
   fileSizeBytes?: number | null;
   photoDataUrl?: string | null;
   controller?: ControllerType;
+  notes?: string;
 };
 
 type CatalogExportMetadata = {
   exportedAt?: string;
   programCount?: number;
   programs?: ExportedProgramMetadata[];
+  instructions?: string;
+};
+
+type ExportedProgramRecord = {
+  id: string;
+  name: string;
+  description: string;
+  dateAdded: string;
+  originalLedName: string;
+  storedFileName: string;
+  exportedLedFileName: string | null;
+  fileSizeBytes: number | null | undefined;
+  photoDataUrl: string | null;
+  controller: ControllerType;
+  notes?: string;
 };
 
 type BilingualTextProps = {
@@ -270,8 +289,12 @@ function App(): JSX.Element {
   const [catalogView, setCatalogView] = useState<"grid" | "list">("list");
   const [copyStatuses, setCopyStatuses] = useState<Record<string, CopyStatus>>({});
   const [searchTerm, setSearchTerm] = useState("");
-  const [isExporting, setIsExporting] = useState(false);
+  const [exportInProgress, setExportInProgress] = useState<"full" | "json" | null>(null);
+  const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  const exportMenuRef = useRef<HTMLDivElement | null>(null);
+
+  const isExporting = exportInProgress !== null;
 
   const savingPercent = saveProgress === null ? null : Math.min(100, Math.round(saveProgress * 100));
   const savingStatusMessage =
@@ -358,6 +381,37 @@ function App(): JSX.Element {
       isMounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!isExportMenuOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!exportMenuRef.current) {
+        return;
+      }
+
+      const target = event.target as Node | null;
+      if (target && !exportMenuRef.current.contains(target)) {
+        setIsExportMenuOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsExportMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isExportMenuOpen]);
 
   useEffect(() => {
     if (!editingProgramId) {
@@ -1076,7 +1130,53 @@ function App(): JSX.Element {
     }
   };
 
-  const handleExportCatalog = async () => {
+  const syncCatalogMetadata = async (
+    metadata: { exportedAt: string; programCount: number },
+    exportedPrograms: ExportedProgramRecord[]
+  ): Promise<"skipped" | "success" | "error"> => {
+    const isHttpContext = typeof window !== "undefined" && window.location?.protocol !== "file:";
+
+    if (typeof fetch !== "function" || !isHttpContext) {
+      console.info("ℹ️ Skipping cloud sync in offline context");
+      return "skipped";
+    }
+
+    try {
+      const syncPayload = {
+        exportedAt: metadata.exportedAt,
+        programCount: metadata.programCount,
+        programs: exportedPrograms.map(({ notes, ...program }) => ({
+          ...program,
+          ...(notes ? { notes } : {}),
+        })),
+      };
+
+      const response = await fetch("/api/sync", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(syncPayload),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "");
+        throw new Error(errorText || `Unexpected response status: ${response.status}`);
+      }
+
+      console.log("☁️ Catalog metadata synced to Cloudflare", {
+        exportedAt: metadata.exportedAt,
+        programCount: metadata.programCount,
+      });
+
+      return "success";
+    } catch (error) {
+      console.error("⚠️ Catalog metadata sync failed", error);
+      return "error";
+    }
+  };
+
+  const handleExportCatalog = async (mode: "full" | "json") => {
     if (programs.length === 0) {
       setFeedback({
         type: "error",
@@ -1085,7 +1185,7 @@ function App(): JSX.Element {
       return;
     }
 
-    if (!("showDirectoryPicker" in window)) {
+    if (mode === "full" && !("showDirectoryPicker" in window)) {
       setFeedback({
         type: "error",
         message: "Browser does not support export. ब्राउज़र एक्सपोर्ट नहीं कर सकता.",
@@ -1093,170 +1193,175 @@ function App(): JSX.Element {
       return;
     }
 
-    setIsExporting(true);
+    setExportInProgress(mode);
 
     try {
-      const sourceDirectory = await ensureDirectoryAccess();
-      if (!sourceDirectory) {
+      const timestamp = new Date();
+      const exportedAt = timestamp.toISOString();
+
+      if (mode === "full") {
+        const sourceDirectory = await ensureDirectoryAccess();
+        if (!sourceDirectory) {
+          return;
+        }
+
+        const exportRoot = await window.showDirectoryPicker({ mode: "readwrite" });
+        const folderName = `led-catalog-export-${exportedAt.replace(/[:.]/g, "-")}`;
+        const exportDirectory = await exportRoot.getDirectoryHandle(folderName, { create: true });
+
+        const exportedPrograms: ExportedProgramRecord[] = [];
+        const usedFileNames = new Set<string>();
+
+        const getExportFileName = (program: Program, index: number): string => {
+          const defaultBase = program.originalLedName
+            ? program.originalLedName.replace(/\.[^.]+$/, "")
+            : program.name || `program-${index + 1}`;
+          const sanitizedBase = sanitizeFileName(defaultBase) || `program-${index + 1}`;
+          const extensionMatch = program.originalLedName.match(/\.[^.]+$/);
+          const extension = extensionMatch ? extensionMatch[0] : ".led";
+
+          let candidate = `${sanitizedBase}${extension}`;
+          let suffix = 2;
+          while (usedFileNames.has(candidate)) {
+            candidate = `${sanitizedBase}-${suffix}${extension}`;
+            suffix += 1;
+          }
+          usedFileNames.add(candidate);
+          return candidate;
+        };
+
+        for (const [index, program] of programs.entries()) {
+          let exportedLedFileName: string | null = null;
+          let ledSize: number | null | undefined = program.fileSizeBytes;
+          let notes: string | undefined;
+
+          try {
+            const sourceFileHandle = await sourceDirectory.getFileHandle(program.storedFileName, { create: false });
+            const sourceFile = await sourceFileHandle.getFile();
+            ledSize = sourceFile.size;
+            const exportFileName = getExportFileName(program, index);
+            const targetFileHandle = await exportDirectory.getFileHandle(exportFileName, { create: true });
+            const writable = await targetFileHandle.createWritable();
+            await writable.write(sourceFile);
+            await writable.close();
+            exportedLedFileName = exportFileName;
+          } catch (error) {
+            console.warn("⚠️ Failed to export LED file", { id: program.id, error });
+            notes = "LED file missing or permission denied";
+          }
+
+          exportedPrograms.push({
+            id: program.id,
+            name: program.name,
+            description: program.description,
+            dateAdded: program.dateAdded,
+            originalLedName: program.originalLedName,
+            storedFileName: program.storedFileName,
+            exportedLedFileName,
+            fileSizeBytes: ledSize,
+            photoDataUrl: program.photoDataUrl,
+            controller: getProgramController(program),
+            ...(notes ? { notes } : {}),
+          });
+        }
+
+        const metadataHandle = await exportDirectory.getFileHandle("catalog.json", { create: true });
+        const metadataWritable = await metadataHandle.createWritable();
+        const metadata: CatalogExportMetadata & { exportedAt: string; programCount: number } = {
+          exportedAt,
+          programCount: exportedPrograms.length,
+          instructions:
+            "Copy this entire folder to the new device and open catalog.json to view program details.",
+          programs: exportedPrograms,
+        };
+        await metadataWritable.write(`${JSON.stringify(metadata, null, 2)}\n`);
+        await metadataWritable.close();
+
+        const syncOutcome = await syncCatalogMetadata(metadata, exportedPrograms);
+
+        let feedbackMessage = `Export complete in folder "${folderName}". एक्सपोर्ट पूरा हुआ।`;
+
+        if (syncOutcome === "success") {
+          feedbackMessage = `Export complete in folder "${folderName}" and synced online. एक्सपोर्ट पूरा हुआ और डेटा ऑनलाइन सेव हो गया।`;
+        } else if (syncOutcome === "error") {
+          feedbackMessage = `Export complete in folder "${folderName}" but online sync failed. एक्सपोर्ट पूरा हुआ पर ऑनलाइन सिंक नहीं हो पाया।`;
+        }
+
+        setFeedback({
+          type: "success",
+          message: feedbackMessage,
+        });
+
+        console.log("📦 Catalog exported", { folderName, programCount: programs.length });
         return;
       }
 
-      const exportRoot = await window.showDirectoryPicker({ mode: "readwrite" });
-      const timestamp = new Date();
-      const folderName = `led-catalog-export-${timestamp.toISOString().replace(/[:.]/g, "-")}`;
-      const exportDirectory = await exportRoot.getDirectoryHandle(folderName, { create: true });
+      const exportedPrograms: ExportedProgramRecord[] = programs.map((program) => ({
+        id: program.id,
+        name: program.name,
+        description: program.description,
+        dateAdded: program.dateAdded,
+        originalLedName: program.originalLedName,
+        storedFileName: program.storedFileName,
+        exportedLedFileName: null,
+        fileSizeBytes: program.fileSizeBytes ?? null,
+        photoDataUrl: program.photoDataUrl,
+        controller: getProgramController(program),
+      }));
 
-      const exportedPrograms: Array<{
-        id: string;
-        name: string;
-        description: string;
-        dateAdded: string;
-        originalLedName: string;
-        storedFileName: string;
-        exportedLedFileName: string | null;
-        fileSizeBytes: number | null | undefined;
-        photoDataUrl: string | null;
-        notes?: string;
-      }> = [];
-
-      const usedFileNames = new Set<string>();
-
-      const getExportFileName = (program: Program, index: number): string => {
-        const defaultBase = program.originalLedName
-          ? program.originalLedName.replace(/\.[^.]+$/, "")
-          : program.name || `program-${index + 1}`;
-        const sanitizedBase = sanitizeFileName(defaultBase) || `program-${index + 1}`;
-        const extensionMatch = program.originalLedName.match(/\.[^.]+$/);
-        const extension = extensionMatch ? extensionMatch[0] : ".led";
-
-        let candidate = `${sanitizedBase}${extension}`;
-        let suffix = 2;
-        while (usedFileNames.has(candidate)) {
-          candidate = `${sanitizedBase}-${suffix}${extension}`;
-          suffix += 1;
-        }
-        usedFileNames.add(candidate);
-        return candidate;
-      };
-
-      for (const [index, program] of programs.entries()) {
-        let exportedLedFileName: string | null = null;
-        let ledSize: number | null | undefined = program.fileSizeBytes;
-        let notes: string | undefined;
-
-        try {
-          const sourceFileHandle = await sourceDirectory.getFileHandle(program.storedFileName, { create: false });
-          const sourceFile = await sourceFileHandle.getFile();
-          ledSize = sourceFile.size;
-          const exportFileName = getExportFileName(program, index);
-          const targetFileHandle = await exportDirectory.getFileHandle(exportFileName, { create: true });
-          const writable = await targetFileHandle.createWritable();
-          await writable.write(sourceFile);
-          await writable.close();
-          exportedLedFileName = exportFileName;
-        } catch (error) {
-          console.warn("⚠️ Failed to export LED file", { id: program.id, error });
-          notes = "LED file missing or permission denied";
-        }
-
-        exportedPrograms.push({
-          id: program.id,
-          name: program.name,
-          description: program.description,
-          dateAdded: program.dateAdded,
-          originalLedName: program.originalLedName,
-          storedFileName: program.storedFileName,
-          exportedLedFileName,
-          fileSizeBytes: ledSize,
-          photoDataUrl: program.photoDataUrl,
-          controller: getProgramController(program),
-          ...(notes ? { notes } : {}),
-        });
-      }
-
-      const metadataHandle = await exportDirectory.getFileHandle("catalog.json", { create: true });
-      const metadataWritable = await metadataHandle.createWritable();
-      const metadata = {
-        exportedAt: new Date().toISOString(),
+      const metadata: CatalogExportMetadata & { exportedAt: string; programCount: number } = {
+        exportedAt,
         programCount: exportedPrograms.length,
         instructions:
-          "Copy this entire folder to the new device and open catalog.json to view program details.",
+          "This quick backup only contains catalog metadata. Export LED files separately if needed.",
         programs: exportedPrograms,
       };
-      await metadataWritable.write(`${JSON.stringify(metadata, null, 2)}\n`);
-      await metadataWritable.close();
 
-      let syncOutcome: "skipped" | "success" | "error" = "skipped";
+      const metadataText = `${JSON.stringify(metadata, null, 2)}\n`;
+      const blob = new Blob([metadataText], { type: "application/json" });
+      const suggestedName = `led-catalog-backup-${exportedAt.replace(/[:.]/g, "-")}.json`;
+      let savedFileName = suggestedName;
 
-      const isHttpContext =
-        typeof window !== "undefined" && window.location?.protocol !== "file:";
-
-      if (typeof fetch === "function" && isHttpContext) {
+      if ("showSaveFilePicker" in window) {
         try {
-          const syncPayload = {
-            exportedAt: metadata.exportedAt,
-            programCount: metadata.programCount,
-            programs: exportedPrograms.map(
-              ({
-                id,
-                name,
-                description,
-                dateAdded,
-                originalLedName,
-                storedFileName,
-                exportedLedFileName,
-                fileSizeBytes,
-                photoDataUrl,
-                notes,
-                controller,
-              }) => ({
-                id,
-                name,
-                description,
-                dateAdded,
-                originalLedName,
-                storedFileName,
-                exportedLedFileName,
-                fileSizeBytes,
-                photoDataUrl,
-                ...(notes ? { notes } : {}),
-                controller,
-              })
-            ),
-          };
-
-          const response = await fetch("/api/sync", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(syncPayload),
+          const saveHandle = await window.showSaveFilePicker({
+            suggestedName,
+            types: [
+              {
+                description: "Catalog JSON",
+                accept: { "application/json": [".json"] },
+              },
+            ],
           });
-
-          if (!response.ok) {
-            const errorText = await response.text().catch(() => "");
-            throw new Error(errorText || `Unexpected response status: ${response.status}`);
-          }
-
-          syncOutcome = "success";
-          console.log("☁️ Catalog metadata synced to Cloudflare", {
-            exportedAt: metadata.exportedAt,
-            programCount: metadata.programCount,
-          });
+          savedFileName = saveHandle.name;
+          const writable = await saveHandle.createWritable();
+          await writable.write(blob);
+          await writable.close();
         } catch (error) {
-          syncOutcome = "error";
-          console.error("⚠️ Catalog metadata sync failed", error);
+          if (error instanceof DOMException && error.name === "AbortError") {
+            console.log("⚠️ Catalog export cancelled by user");
+            return;
+          }
+          throw error;
         }
       } else {
-        console.info("ℹ️ Skipping cloud sync in offline context");
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = suggestedName;
+        anchor.rel = "noopener";
+        anchor.click();
+        window.setTimeout(() => URL.revokeObjectURL(url), 1000);
       }
 
-      let feedbackMessage = `Export complete in folder "${folderName}". एक्सपोर्ट पूरा हुआ।`;
+      const syncOutcome = await syncCatalogMetadata(metadata, exportedPrograms);
+
+      let feedbackMessage = `Quick JSON backup saved as "${savedFileName}". JSON बैकअप सेव हुआ।`;
 
       if (syncOutcome === "success") {
-        feedbackMessage = `Export complete in folder "${folderName}" and synced online. एक्सपोर्ट पूरा हुआ और डेटा ऑनलाइन सेव हो गया।`;
+        feedbackMessage = `Quick JSON backup saved as "${savedFileName}" and synced online. JSON बैकअप सेव हुआ और ऑनलाइन सिंक भी हो गया।`;
       } else if (syncOutcome === "error") {
-        feedbackMessage = `Export complete in folder "${folderName}" but online sync failed. एक्सपोर्ट पूरा हुआ पर ऑनलाइन सिंक नहीं हो पाया।`;
+        feedbackMessage = `Quick JSON backup saved as "${savedFileName}" but online sync failed. JSON बैकअप सेव हुआ पर ऑनलाइन सिंक नहीं हो पाया।`;
       }
 
       setFeedback({
@@ -1264,7 +1369,10 @@ function App(): JSX.Element {
         message: feedbackMessage,
       });
 
-      console.log("📦 Catalog exported", { folderName, programCount: programs.length });
+      console.log("🧾 Catalog metadata exported", {
+        fileName: savedFileName,
+        programCount: programs.length,
+      });
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") {
         console.log("⚠️ Catalog export cancelled by user");
@@ -1275,263 +1383,11 @@ function App(): JSX.Element {
         type: "error",
         message: "Export failed. एक्सपोर्ट नहीं हो पाया.",
       });
-  } finally {
-    setIsExporting(false);
-  }
-  };
-
-  const handleImportCatalog = async () => {
-    if (!isFileSystemSupported) {
-      setFeedback({
-        type: "error",
-        message: "Browser unsupported. ब्राउज़र यह फीचर नहीं चला सकता.",
-      });
-      return;
-    }
-
-    setIsImporting(true);
-
-    try {
-      const importDirectory = await window.showDirectoryPicker({
-        id: "led-catalog-import",
-        mode: "read",
-      });
-
-      let metadataHandle: FileSystemFileHandle;
-      try {
-        metadataHandle = await importDirectory.getFileHandle("catalog.json", { create: false });
-      } catch (error) {
-        setFeedback({
-          type: "error",
-          message: "catalog.json missing in backup. बैकअप में catalog.json नहीं मिला.",
-        });
-        return;
-      }
-
-      const metadataFile = await metadataHandle.getFile();
-      const metadataText = await metadataFile.text();
-
-      let metadata: CatalogExportMetadata;
-      try {
-        metadata = JSON.parse(metadataText) as CatalogExportMetadata;
-      } catch (error) {
-        setFeedback({
-          type: "error",
-          message: "Backup file is corrupted. बैकअप फाइल सही नहीं है.",
-        });
-        return;
-      }
-
-      const exportedPrograms = Array.isArray(metadata.programs) ? metadata.programs : [];
-
-      if (exportedPrograms.length === 0) {
-        setFeedback({
-          type: "error",
-          message: "Backup is empty. बैकअप खाली है.",
-        });
-        return;
-      }
-
-      const normalizeString = (value: unknown): string | null =>
-        typeof value === "string" ? value.trim() : null;
-
-      const normalizeController = (value: unknown): ControllerType => {
-        if (value === "t1000" || value === "t8000") {
-          return value;
-        }
-        if (typeof value === "string") {
-          const normalized = value.trim().toLowerCase();
-          if (normalized === "t1000" || normalized === "t8000") {
-            return normalized;
-          }
-        }
-        return DEFAULT_CONTROLLER;
-      };
-
-      const existingIds = new Set(programs.map((program) => program.id));
-      const skippedExisting: string[] = [];
-      const skippedMissing: string[] = [];
-      const candidates: Array<{ entry: ExportedProgramMetadata; file: File }> = [];
-
-      for (const entry of exportedPrograms) {
-        const displayName = normalizeString(entry.name) ?? "Imported Program";
-        const candidateFileName =
-          normalizeString(entry.exportedLedFileName) ??
-          normalizeString(entry.originalLedName) ??
-          normalizeString(entry.storedFileName);
-
-        if (!candidateFileName) {
-          skippedMissing.push(displayName);
-          continue;
-        }
-
-        let file: File;
-        try {
-          const fileHandle = await importDirectory.getFileHandle(candidateFileName, { create: false });
-          file = await fileHandle.getFile();
-        } catch (error) {
-          console.warn("⚠️ Missing LED file during import", { candidateFileName, error });
-          skippedMissing.push(displayName);
-          continue;
-        }
-
-        const entryId = normalizeString(entry.id);
-        if (entryId && existingIds.has(entryId)) {
-          skippedExisting.push(displayName);
-          continue;
-        }
-
-        candidates.push({ entry, file });
-      }
-
-      if (candidates.length === 0) {
-        let message = "No new programs to import. नया डेटा उपलब्ध नहीं है.";
-
-        if (skippedMissing.length > 0 && skippedExisting.length === 0) {
-          message = "Files missing in backup. बैकअप में जरूरी फाइल नहीं मिली।";
-        } else if (skippedExisting.length > 0 && skippedMissing.length === 0) {
-          message = "All programs already in catalog. सारे प्रोग्राम पहले से मौजूद हैं.";
-        } else if (skippedMissing.length > 0 && skippedExisting.length > 0) {
-          message = "Nothing imported: files missing or already saved. कुछ भी इम्पोर्ट नहीं हुआ.";
-        }
-
-        setFeedback({
-          type: "error",
-          message,
-        });
-        return;
-      }
-
-      const totalBytes = candidates.reduce((sum, { file }) => sum + file.size, 0);
-      const hasSpace = await ensureStorageCapacity(totalBytes);
-      if (!hasSpace) {
-        return;
-      }
-
-      const targetDirectory = await ensureDirectoryAccess();
-      if (!targetDirectory) {
-        return;
-      }
-
-      const importedPrograms: Program[] = [];
-      const failedImports: string[] = [];
-
-      for (const { entry, file } of candidates) {
-        const displayName = normalizeString(entry.name) ?? file.name;
-        const preferredId = normalizeString(entry.id);
-        let newId =
-          preferredId && !existingIds.has(preferredId)
-            ? preferredId
-            : `${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
-        while (existingIds.has(newId)) {
-          newId = `${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
-        }
-
-        const storedFileName = `${newId}-${sanitizeFileName(file.name)}`;
-        let createdFileName: string | null = null;
-
-        try {
-          const targetFileHandle = await targetDirectory.getFileHandle(storedFileName, { create: true });
-          createdFileName = storedFileName;
-          const writable = await targetFileHandle.createWritable();
-          await writable.write(file);
-          await writable.close();
-
-          const importedProgram: Program = {
-            id: newId,
-            name: normalizeString(entry.name) ?? file.name.replace(/\.[^.]+$/, ""),
-            description: normalizeString(entry.description) ?? "",
-            dateAdded: normalizeString(entry.dateAdded) ?? new Date().toISOString(),
-            originalLedName: normalizeString(entry.originalLedName) ?? file.name,
-            storedFileName,
-            photoDataUrl: typeof entry.photoDataUrl === "string" ? entry.photoDataUrl : null,
-            fileSizeBytes: file.size,
-            controller: normalizeController(entry.controller),
-          };
-
-          await saveStoredProgram(importedProgram);
-          existingIds.add(newId);
-          importedPrograms.push(importedProgram);
-        } catch (error) {
-          console.error("⚠️ Failed to import program", { displayName, error });
-          if (createdFileName) {
-            try {
-              await targetDirectory.removeEntry(createdFileName);
-            } catch (cleanupError) {
-              console.warn("⚠️ Could not clean up failed import file", cleanupError);
-            }
-          }
-          failedImports.push(displayName);
-        }
-      }
-
-      if (importedPrograms.length === 0) {
-        const messageParts: string[] = [];
-        if (failedImports.length > 0) {
-          messageParts.push(
-            `Could not import ${failedImports.length} program${failedImports.length === 1 ? "" : "s"}. ${failedImports.length} प्रोग्राम इम्पोर्ट नहीं हो पाए।`
-          );
-        }
-        if (skippedMissing.length > 0) {
-          messageParts.push(
-            `Files missing for ${skippedMissing.length} programs. ${skippedMissing.length} प्रोग्राम की फाइल नहीं मिली।`
-          );
-        }
-        setFeedback({
-          type: "error",
-          message: messageParts.join(" ") || "Import failed. इम्पोर्ट नहीं हो पाया.",
-        });
-        return;
-      }
-
-      setPrograms((prev) => sortPrograms([...prev, ...importedPrograms]));
-      setActiveTab("view");
-
-      const messageParts: string[] = [];
-      messageParts.push(
-        `Imported ${importedPrograms.length} program${importedPrograms.length === 1 ? "" : "s"}. ${importedPrograms.length} प्रोग्राम इम्पोर्ट हुए।`
-      );
-      if (skippedExisting.length > 0) {
-        messageParts.push(
-          `${skippedExisting.length} already existed. ${skippedExisting.length} पहले से सेव थे।`
-        );
-      }
-      if (skippedMissing.length > 0) {
-        messageParts.push(
-          `${skippedMissing.length} files missing. ${skippedMissing.length} फाइल नहीं मिली।`
-        );
-      }
-      if (failedImports.length > 0) {
-        messageParts.push(
-          `${failedImports.length} could not import. ${failedImports.length} इम्पोर्ट नहीं हो पाए।`
-        );
-      }
-
-      setFeedback({
-        type: skippedMissing.length > 0 || failedImports.length > 0 ? "error" : "success",
-        message: messageParts.join(" "),
-      });
-
-      console.log("📥 Catalog import complete", {
-        imported: importedPrograms.length,
-        skippedExisting: skippedExisting.length,
-        skippedMissing: skippedMissing.length,
-        failed: failedImports.length,
-      });
-    } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") {
-        console.log("⚠️ Catalog import cancelled by user");
-        return;
-      }
-      console.error("❌ Catalog import failed", error);
-      setFeedback({
-        type: "error",
-        message: "Import failed. इम्पोर्ट नहीं हो पाया.",
-      });
     } finally {
-      setIsImporting(false);
+      setExportInProgress(null);
     }
   };
+
 
   const handleClearAll = async () => {
     const password = window.prompt(
@@ -1760,25 +1616,102 @@ function App(): JSX.Element {
                     )}
                     <span className="sr-only">{isImporting ? "Importing…" : "Import backup · बैकअप जोड़ें"}</span>
                   </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-11 w-11 rounded-xl border border-border/60 bg-background/80 text-muted-foreground hover:text-foreground"
-                    onClick={() => {
-                      void handleExportCatalog();
-                    }}
-                    disabled={isExporting}
-                    aria-busy={isExporting}
-                    title={isExporting ? "Exporting backup…" : "Export backup"}
-                  >
-                    {isExporting ? (
-                      <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
-                    ) : (
-                      <Download className="h-5 w-5" aria-hidden="true" />
-                    )}
-                    <span className="sr-only">{isExporting ? "Exporting…" : "Export backup · बैकअप सेव करें"}</span>
-                  </Button>
+                  <div className="relative" ref={exportMenuRef}>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-11 w-11 rounded-xl border border-border/60 bg-background/80 text-muted-foreground hover:text-foreground"
+                      onClick={() => {
+                        if (isExporting) {
+                          return;
+                        }
+                        setIsExportMenuOpen((prev) => !prev);
+                      }}
+                      disabled={isExporting}
+                      aria-expanded={isExportMenuOpen}
+                      aria-haspopup="menu"
+                      aria-controls="export-menu"
+                      aria-busy={isExporting}
+                      title={isExporting ? "Exporting backup…" : "Export backup options"}
+                    >
+                      {isExporting ? (
+                        <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
+                      ) : (
+                        <Download className="h-5 w-5" aria-hidden="true" />
+                      )}
+                      <span className="sr-only">
+                        {isExporting
+                          ? "Exporting…"
+                          : isExportMenuOpen
+                          ? "Hide export options · एक्सपोर्ट विकल्प छुपाएँ"
+                          : "Export backup options · एक्सपोर्ट विकल्प"}
+                      </span>
+                    </Button>
+                    {isExportMenuOpen ? (
+                      <div
+                        id="export-menu"
+                        role="menu"
+                        aria-label="Export options"
+                        className="absolute right-0 z-20 mt-2 w-72 rounded-2xl border border-border/80 bg-card/95 p-2 shadow-lg"
+                      >
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className="flex w-full items-start gap-3 rounded-xl px-3 py-2 text-left transition hover:bg-muted/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-70"
+                          onClick={() => {
+                            setIsExportMenuOpen(false);
+                            void handleExportCatalog("full");
+                          }}
+                          disabled={isExporting}
+                        >
+                          <FolderDown className="mt-1 h-5 w-5 text-muted-foreground" aria-hidden="true" />
+                          <div className="flex flex-1 flex-col gap-1">
+                            <BilingualText
+                              primary="Full export"
+                              secondary="संपूर्ण बैकअप"
+                              align="start"
+                              className="items-start text-left text-sm font-semibold"
+                              secondaryClassName="text-xs text-muted-foreground/80"
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              Files + catalog.json. फाइलें और JSON दोनों सेव करें।
+                            </p>
+                          </div>
+                          {exportInProgress === "full" ? (
+                            <Loader2 className="ml-2 h-4 w-4 animate-spin text-muted-foreground" aria-hidden="true" />
+                          ) : null}
+                        </button>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className="mt-1 flex w-full items-start gap-3 rounded-xl px-3 py-2 text-left transition hover:bg-muted/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-70"
+                          onClick={() => {
+                            setIsExportMenuOpen(false);
+                            void handleExportCatalog("json");
+                          }}
+                          disabled={isExporting}
+                        >
+                          <FileJson className="mt-1 h-5 w-5 text-muted-foreground" aria-hidden="true" />
+                          <div className="flex flex-1 flex-col gap-1">
+                            <BilingualText
+                              primary="Quick JSON backup"
+                              secondary="त्वरित JSON बैकअप"
+                              align="start"
+                              className="items-start text-left text-sm font-semibold"
+                              secondaryClassName="text-xs text-muted-foreground/80"
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              Metadata only. दूसरे डिवाइस पर जल्दी से पुनर्स्थापित करें।
+                            </p>
+                          </div>
+                          {exportInProgress === "json" ? (
+                            <Loader2 className="ml-2 h-4 w-4 animate-spin text-muted-foreground" aria-hidden="true" />
+                          ) : null}
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
               </div>
             </div>
