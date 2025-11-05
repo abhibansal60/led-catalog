@@ -39,19 +39,19 @@ import {
   getStoredDirectoryHandle,
   saveProgram as saveStoredProgram,
   setStoredDirectoryHandle,
+  type ControllerType,
   type StoredProgram,
 } from "@/lib/storage";
 
 const MAX_PHOTO_BYTES = 2 * 1024 * 1024;
 const REFRESH_PASSWORD = "0000";
 const COPIED_LED_FILENAME = "00_program.led";
-const COPIED_NOTE_FILENAME = (() => {
-  const extensionIndex = COPIED_LED_FILENAME.lastIndexOf(".");
-  if (extensionIndex <= 0) {
-    return `${COPIED_LED_FILENAME}.txt`;
-  }
-  return `${COPIED_LED_FILENAME.slice(0, extensionIndex)}.txt`;
-})();
+const DEFAULT_CONTROLLER: ControllerType = "t1000";
+
+const CONTROLLER_OPTIONS: Array<{ value: ControllerType; label: string }> = [
+  { value: "t1000", label: "T1000" },
+  { value: "t8000", label: "T8000" },
+];
 
 export type Program = StoredProgram;
 
@@ -60,11 +60,35 @@ type FeedbackMessage = {
   message: string;
 };
 
+const formatControllerLabel = (controller: ControllerType): string => controller.toUpperCase();
+
+const getProgramController = (program: Pick<Program, "controller">): ControllerType =>
+  program.controller ?? DEFAULT_CONTROLLER;
+
+const getProgramMetadataFilename = (program: Program): string => {
+  const trimmedName = program.name.trim();
+  if (trimmedName) {
+    const sanitizedName = sanitizeFileName(trimmedName);
+    if (sanitizedName) {
+      return `${sanitizedName}.txt`;
+    }
+  }
+
+  const ledBase = sanitizeFileName(program.originalLedName.replace(/\.[^.]+$/, ""));
+  if (ledBase) {
+    return `${ledBase}.txt`;
+  }
+
+  const fallback = program.id ? sanitizeFileName(program.id) : "program";
+  return `${fallback || "program"}.txt`;
+};
+
 type ProgramFormState = {
   programName: string;
   ledFile: File | null;
   description: string;
   photoFile: File | null;
+  controller: ControllerType;
 };
 
 const getEmptyForm = (): ProgramFormState => ({
@@ -72,6 +96,7 @@ const getEmptyForm = (): ProgramFormState => ({
   ledFile: null,
   description: "",
   photoFile: null,
+  controller: DEFAULT_CONTROLLER,
 });
 
 const readFileAsDataUrl = (file: File): Promise<string> =>
@@ -133,6 +158,7 @@ type ExportedProgramMetadata = {
   exportedLedFileName?: string | null;
   fileSizeBytes?: number | null;
   photoDataUrl?: string | null;
+  controller?: ControllerType;
 };
 
 type CatalogExportMetadata = {
@@ -198,7 +224,11 @@ function App(): JSX.Element {
       try {
         const storedPrograms = await getAllPrograms();
         if (isMounted) {
-          setPrograms(sortPrograms(storedPrograms));
+          const normalizedPrograms = storedPrograms.map((program) => ({
+            ...program,
+            controller: program.controller ?? DEFAULT_CONTROLLER,
+          }));
+          setPrograms(sortPrograms(normalizedPrograms));
         }
       } catch (error) {
         console.error("⚠️ Could not load saved programs", error);
@@ -486,6 +516,14 @@ function App(): JSX.Element {
     }
   };
 
+  const handleControllerChange = (event: ChangeEvent<HTMLSelectElement>) => {
+    const value = event.target.value as ControllerType;
+    setFormData((prev) => ({
+      ...prev,
+      controller: value,
+    }));
+  };
+
   const handleLedFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) {
@@ -648,6 +686,7 @@ function App(): JSX.Element {
           storedFileName: updatedStoredFileName,
           photoDataUrl: updatedPhotoDataUrl,
           fileSizeBytes: updatedFileSize,
+          controller: formData.controller,
         };
 
         await saveStoredProgram(updatedProgram);
@@ -691,6 +730,7 @@ function App(): JSX.Element {
           photoDataUrl,
           dateAdded: new Date().toISOString(),
           fileSizeBytes: formData.ledFile!.size,
+          controller: formData.controller,
         };
 
         await saveStoredProgram(newProgram);
@@ -803,6 +843,9 @@ function App(): JSX.Element {
       ? program.dateAdded
       : `${date.toLocaleDateString()} ${date.toLocaleTimeString()}`;
 
+    const controllerLabel = formatControllerLabel(getProgramController(program));
+    const metadataFileName = getProgramMetadataFilename(program);
+
     const lines = [
       header,
       `Program Name: ${program.name || "Not provided"}`,
@@ -810,6 +853,8 @@ function App(): JSX.Element {
       `Copied As: ${COPIED_LED_FILENAME}`,
       `Description: ${program.description ? program.description : "(none)"}`,
       `Date Added: ${localizedDate}`,
+      `Controller: ${controllerLabel}`,
+      `Metadata File: ${metadataFileName}`,
     ];
 
     if (program.fileSizeBytes !== undefined && program.fileSizeBytes !== null) {
@@ -871,9 +916,11 @@ function App(): JSX.Element {
       await writable.close();
       writable = null;
 
+      const metadataFileName = getProgramMetadataFilename(program);
+
       try {
         const metadataContent = buildProgramMetadataNote(program);
-        const metadataHandle = await sdHandle.getFileHandle(COPIED_NOTE_FILENAME, { create: true });
+        const metadataHandle = await sdHandle.getFileHandle(metadataFileName, { create: true });
         metadataWritable = await metadataHandle.createWritable();
         await metadataWritable.write(metadataContent);
         await metadataWritable.close();
@@ -913,13 +960,13 @@ function App(): JSX.Element {
         [program.id]: { status: "success", progress: 100 },
       }));
       window.alert(
-        `Copied to SD card as ${COPIED_LED_FILENAME} with details in ${COPIED_NOTE_FILENAME}.\n`
-          + `SD कार्ड में ${COPIED_LED_FILENAME} कॉपी हुआ और नोट ${COPIED_NOTE_FILENAME} में सेव हुआ।`
+        `Copied to SD card as ${COPIED_LED_FILENAME} with details in ${metadataFileName}.\n`
+          + `SD कार्ड में ${COPIED_LED_FILENAME} कॉपी हुआ और नोट ${metadataFileName} में सेव हुआ।`
       );
       console.log("💾 Program copied to SD card", {
         id: program.id,
         directory: sdHandle.name,
-        metadataFile: COPIED_NOTE_FILENAME,
+        metadataFile: metadataFileName,
       });
 
       window.setTimeout(() => {
@@ -1060,6 +1107,7 @@ function App(): JSX.Element {
           exportedLedFileName,
           fileSizeBytes: ledSize,
           photoDataUrl: program.photoDataUrl,
+          controller: getProgramController(program),
           ...(notes ? { notes } : {}),
         });
       }
@@ -1098,6 +1146,7 @@ function App(): JSX.Element {
                 fileSizeBytes,
                 photoDataUrl,
                 notes,
+                controller,
               }) => ({
                 id,
                 name,
@@ -1109,6 +1158,7 @@ function App(): JSX.Element {
                 fileSizeBytes,
                 photoDataUrl,
                 ...(notes ? { notes } : {}),
+                controller,
               })
             ),
           };
@@ -1223,6 +1273,19 @@ function App(): JSX.Element {
       const normalizeString = (value: unknown): string | null =>
         typeof value === "string" ? value.trim() : null;
 
+      const normalizeController = (value: unknown): ControllerType => {
+        if (value === "t1000" || value === "t8000") {
+          return value;
+        }
+        if (typeof value === "string") {
+          const normalized = value.trim().toLowerCase();
+          if (normalized === "t1000" || normalized === "t8000") {
+            return normalized;
+          }
+        }
+        return DEFAULT_CONTROLLER;
+      };
+
       const existingIds = new Set(programs.map((program) => program.id));
       const skippedExisting: string[] = [];
       const skippedMissing: string[] = [];
@@ -1321,6 +1384,7 @@ function App(): JSX.Element {
             storedFileName,
             photoDataUrl: typeof entry.photoDataUrl === "string" ? entry.photoDataUrl : null,
             fileSizeBytes: file.size,
+            controller: normalizeController(entry.controller),
           };
 
           await saveStoredProgram(importedProgram);
@@ -1472,7 +1536,8 @@ function App(): JSX.Element {
     }
 
     return programs.filter((program) => {
-      const haystack = `${program.name} ${program.originalLedName} ${program.description}`.toLowerCase();
+      const controllerValue = getProgramController(program);
+      const haystack = `${program.name} ${program.originalLedName} ${program.description} ${controllerValue} ${formatControllerLabel(controllerValue)}`.toLowerCase();
       return haystack.includes(normalized);
     });
   }, [programs, trimmedSearchTerm]);
@@ -1849,6 +1914,7 @@ function App(): JSX.Element {
                       (directoryPermission === "granted"
                         ? "Size unavailable"
                         : "Connect folder to view size");
+                    const controllerLabel = formatControllerLabel(getProgramController(program));
 
                     if (isGridView) {
                       return (
@@ -1882,6 +1948,10 @@ function App(): JSX.Element {
                                 <p>
                                   <span className="font-medium text-foreground">Size:</span>{" "}
                                   {sizeDisplay}
+                                </p>
+                                <p>
+                                  <span className="font-medium text-foreground">Controller:</span>{" "}
+                                  {controllerLabel}
                                 </p>
                               </div>
                             </div>
@@ -1965,6 +2035,7 @@ function App(): JSX.Element {
                                     ledFile: null,
                                     description: program.description ?? "",
                                     photoFile: null,
+                                    controller: program.controller ?? DEFAULT_CONTROLLER,
                                   });
                                   setActiveTab("add");
                                   setShouldRemovePhoto(false);
@@ -2008,6 +2079,7 @@ function App(): JSX.Element {
                             <div className="min-w-0 space-y-1">
                               <p className="truncate text-lg font-semibold text-foreground">{program.name}</p>
                               <p className="text-sm text-muted-foreground">Size: {sizeDisplay}</p>
+                              <p className="text-sm text-muted-foreground">Controller: {controllerLabel}</p>
                             </div>
                             <Button
                               type="button"
@@ -2170,6 +2242,31 @@ function App(): JSX.Element {
                     required
                     placeholder="e.g., Shaadi Entry"
                   />
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="controller" className="space-y-1">
+                    <BilingualText
+                      primary="Controller *"
+                      secondary="कंट्रोलर (अनिवार्य)"
+                      align="start"
+                      className="items-start text-left"
+                      secondaryClassName="text-sm text-muted-foreground"
+                    />
+                  </Label>
+                  <select
+                    id="controller"
+                    name="controller"
+                    value={formData.controller}
+                    onChange={handleControllerChange}
+                    className="h-11 rounded-md border border-input bg-background px-3 text-base shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  >
+                    {CONTROLLER_OPTIONS.map(({ value, label }) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div className="flex flex-col gap-2">

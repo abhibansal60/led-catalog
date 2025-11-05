@@ -4,6 +4,8 @@ const PROGRAM_STORE = "programs";
 const SETTINGS_STORE = "settings";
 const DIRECTORY_KEY = "directoryHandle";
 
+export type ControllerType = "t1000" | "t8000";
+
 export type StoredProgram = {
   id: string;
   name: string;
@@ -13,6 +15,7 @@ export type StoredProgram = {
   photoDataUrl: string | null;
   dateAdded: string;
   fileSizeBytes?: number | null;
+  controller?: ControllerType;
 };
 
 type StoredSettings = {
