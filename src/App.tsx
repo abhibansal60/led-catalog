@@ -28,7 +28,7 @@ import {
   FolderDown,
 } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -180,6 +180,75 @@ const sortPrograms = (items: Program[]): Program[] =>
     (a, b) => new Date(b.dateAdded).getTime() - new Date(a.dateAdded).getTime()
   );
 
+const generateUniqueProgramId = (preferredId: string | null | undefined, usedIds: Set<string>): string => {
+  const trimmedPreferred = preferredId?.trim();
+  if (trimmedPreferred && !usedIds.has(trimmedPreferred)) {
+    usedIds.add(trimmedPreferred);
+    return trimmedPreferred;
+  }
+
+  let generatedId = `${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+  while (usedIds.has(generatedId)) {
+    generatedId = `${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+  }
+  usedIds.add(generatedId);
+  return generatedId;
+};
+
+const ensureValidIsoDate = (value?: string | null): string => {
+  if (value) {
+    const date = new Date(value);
+    if (!Number.isNaN(date.getTime())) {
+      return date.toISOString();
+    }
+  }
+  return new Date().toISOString();
+};
+
+const buildStoredFileNameFromSource = (id: string, sourceName: string | null | undefined, fallbackIndex: number): string => {
+  const baseName = sourceName && sourceName.trim() ? sourceName.trim() : `program-${fallbackIndex + 1}.led`;
+  return `${id}-${sanitizeFileName(baseName)}`;
+};
+
+const normalizeExportedProgram = (
+  record: ExportedProgramMetadata,
+  index: number
+): MetadataImportProgram => {
+  const preferredId = typeof record.id === "string" && record.id.trim() ? record.id.trim() : null;
+  const safeId = preferredId ?? `import-${Date.now()}-${Math.random().toString(16).slice(2, 8)}-${index}`;
+  const fallbackName = record.name && record.name.trim() ? record.name.trim() : `Program ${index + 1}`;
+  const sanitizedFallback = sanitizeFileName(fallbackName) || `program-${index + 1}`;
+  const fallbackLedName = sanitizedFallback.toLowerCase().endsWith(".led")
+    ? sanitizedFallback
+    : `${sanitizedFallback}.led`;
+  const originalLedName =
+    record.originalLedName && record.originalLedName.trim()
+      ? record.originalLedName.trim()
+      : record.exportedLedFileName && record.exportedLedFileName.trim()
+      ? record.exportedLedFileName.trim()
+      : fallbackLedName;
+  const storedFileName =
+    record.storedFileName && record.storedFileName.trim()
+      ? record.storedFileName.trim()
+      : buildStoredFileNameFromSource(safeId, originalLedName, index);
+
+  return {
+    tempId: `${safeId}-${index}-${Math.random().toString(16).slice(2, 10)}`,
+    id: safeId,
+    name: fallbackName,
+    description: record.description ?? "",
+    dateAdded: ensureValidIsoDate(record.dateAdded),
+    originalLedName,
+    storedFileName,
+    exportedLedFileName: record.exportedLedFileName ?? null,
+    fileSizeBytes: record.fileSizeBytes ?? null,
+    photoDataUrl: record.photoDataUrl ?? null,
+    controller: record.controller ?? DEFAULT_CONTROLLER,
+    notes: record.notes,
+    isFileMissing: record.isFileMissing ?? false,
+  };
+};
+
 type CopyStatus = {
   status: "copying" | "success" | "error";
   progress: number;
@@ -218,6 +287,7 @@ type ExportedProgramMetadata = {
   photoDataUrl?: string | null;
   controller?: ControllerType;
   notes?: string;
+  isFileMissing?: boolean;
 };
 
 type CatalogExportMetadata = {
@@ -239,6 +309,11 @@ type ExportedProgramRecord = {
   photoDataUrl: string | null;
   controller: ControllerType;
   notes?: string;
+  isFileMissing?: boolean;
+};
+
+type MetadataImportProgram = ExportedProgramRecord & {
+  tempId: string;
 };
 
 type BilingualTextProps = {
@@ -292,6 +367,20 @@ function App(): JSX.Element {
   const [exportInProgress, setExportInProgress] = useState<"full" | "json" | null>(null);
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+  const [isMetadataReviewOpen, setIsMetadataReviewOpen] = useState(false);
+  const [metadataImportPrograms, setMetadataImportPrograms] = useState<MetadataImportProgram[]>([]);
+  const [metadataImportDetails, setMetadataImportDetails] = useState<
+    | {
+        fileName: string;
+        exportedAt?: string | null;
+        programCount: number;
+      }
+    | null
+  >(null);
+  const [metadataImportSelections, setMetadataImportSelections] = useState<Record<string, File | null>>({});
+  const [metadataImportErrors, setMetadataImportErrors] = useState<Record<string, string>>({});
+  const [isProcessingMetadataImport, setIsProcessingMetadataImport] = useState(false);
   const exportMenuRef = useRef<HTMLDivElement | null>(null);
 
   const isExporting = exportInProgress !== null;
@@ -314,6 +403,7 @@ function App(): JSX.Element {
           const normalizedPrograms = storedPrograms.map((program) => ({
             ...program,
             controller: program.controller ?? DEFAULT_CONTROLLER,
+            isFileMissing: program.isFileMissing ?? false,
           }));
           setPrograms(sortPrograms(normalizedPrograms));
         }
@@ -624,6 +714,437 @@ function App(): JSX.Element {
     return true;
   }, []);
 
+  const resetMetadataImportState = useCallback(() => {
+    setMetadataImportPrograms([]);
+    setMetadataImportSelections({});
+    setMetadataImportErrors({});
+    setMetadataImportDetails(null);
+    setIsMetadataReviewOpen(false);
+  }, []);
+
+  const handleImportCatalog = useCallback(() => {
+    resetMetadataImportState();
+    setIsImportDialogOpen(true);
+  }, [resetMetadataImportState]);
+
+  const handleStartFullImport = useCallback(async () => {
+    setIsImportDialogOpen(false);
+    setIsImporting(true);
+    try {
+      const targetDirectory = await ensureDirectoryAccess();
+      if (!targetDirectory) {
+        return;
+      }
+
+      let importDirectory: FileSystemDirectoryHandle;
+      try {
+        importDirectory = await window.showDirectoryPicker({ mode: "read" });
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          console.log("⚠️ Full import cancelled before selecting folder");
+          return;
+        }
+        throw error;
+      }
+
+      let catalogHandle: FileSystemFileHandle;
+      try {
+        catalogHandle = await importDirectory.getFileHandle("catalog.json", { create: false });
+      } catch (error) {
+        console.warn("⚠️ catalog.json not found in import folder", error);
+        setFeedback({
+          type: "error",
+          message: "catalog.json not found in that folder. catalog.json फ़ाइल नहीं मिली.",
+        });
+        return;
+      }
+
+      let parsed: CatalogExportMetadata;
+      try {
+        const catalogFile = await catalogHandle.getFile();
+        const catalogText = await catalogFile.text();
+        parsed = JSON.parse(catalogText) as CatalogExportMetadata;
+      } catch (error) {
+        console.error("❌ Could not read catalog.json", error);
+        setFeedback({
+          type: "error",
+          message: "Invalid catalog.json file. catalog.json पढ़ा नहीं जा सका.",
+        });
+        return;
+      }
+
+      const exportedPrograms = Array.isArray(parsed.programs) ? parsed.programs : [];
+      if (exportedPrograms.length === 0) {
+        setFeedback({
+          type: "error",
+          message: "No programs found in backup. बैकअप में कोई प्रोग्राम नहीं मिला.",
+        });
+        return;
+      }
+
+      const normalizedRecords = exportedPrograms.map((record, index) => normalizeExportedProgram(record, index));
+      const usedIds = new Set(programs.map((program) => program.id));
+      const createdPrograms: Program[] = [];
+      let missingCount = 0;
+
+      for (const [index, record] of normalizedRecords.entries()) {
+        const finalId = generateUniqueProgramId(record.id, usedIds);
+        let originalLedName = record.originalLedName;
+        let storedFileName = buildStoredFileNameFromSource(finalId, originalLedName, index);
+        let fileSize = record.fileSizeBytes ?? null;
+        let isFileMissing = record.isFileMissing ?? false;
+
+        if (!isFileMissing && record.exportedLedFileName) {
+          try {
+            const sourceFileHandle = await importDirectory.getFileHandle(record.exportedLedFileName, { create: false });
+            const sourceFile = await sourceFileHandle.getFile();
+            const hasSpace = await ensureStorageCapacity(sourceFile.size);
+            if (hasSpace) {
+              originalLedName = sourceFile.name;
+              storedFileName = buildStoredFileNameFromSource(finalId, sourceFile.name, index);
+              const targetFileHandle = await targetDirectory.getFileHandle(storedFileName, { create: true });
+              try {
+                await writeFileToHandle(targetFileHandle, sourceFile);
+                fileSize = sourceFile.size;
+              } catch (writeError) {
+                console.warn("⚠️ Failed to copy LED file during import", writeError);
+                try {
+                  await targetDirectory.removeEntry(storedFileName);
+                } catch (cleanupError) {
+                  console.warn("⚠️ Could not clean up partial import file", cleanupError);
+                }
+                isFileMissing = true;
+              }
+            } else {
+              isFileMissing = true;
+            }
+          } catch (error) {
+            console.warn("⚠️ Could not find LED file in backup", { name: record.name, error });
+            isFileMissing = true;
+          }
+        } else if (!isFileMissing) {
+          isFileMissing = true;
+        }
+
+        if (isFileMissing) {
+          missingCount += 1;
+        }
+
+        const programToStore: Program = {
+          id: finalId,
+          name: record.name,
+          description: record.description,
+          originalLedName,
+          storedFileName,
+          photoDataUrl: record.photoDataUrl,
+          dateAdded: record.dateAdded,
+          fileSizeBytes: fileSize,
+          controller: record.controller ?? DEFAULT_CONTROLLER,
+          isFileMissing,
+        };
+
+        await saveStoredProgram(programToStore);
+        createdPrograms.push(programToStore);
+      }
+
+      if (createdPrograms.length > 0) {
+        setPrograms((prev) => sortPrograms([...prev, ...createdPrograms]));
+      }
+
+      const mappedCount = createdPrograms.length - missingCount;
+      let message = `Imported ${createdPrograms.length} programs from backup.`;
+      if (mappedCount > 0 && missingCount > 0) {
+        message = `Imported ${createdPrograms.length} programs (${mappedCount} ready, ${missingCount} need LED files).`;
+      } else if (missingCount > 0) {
+        message = `Imported ${createdPrograms.length} programs. Map LED files to finish setup.`;
+      }
+
+      setFeedback({
+        type: missingCount > 0 ? "error" : "success",
+        message,
+      });
+
+      console.log("📥 Full backup imported", {
+        total: createdPrograms.length,
+        mapped: mappedCount,
+        missing: missingCount,
+        exportedAt: parsed.exportedAt,
+      });
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        console.log("⚠️ Full import cancelled by user");
+        return;
+      }
+      console.error("❌ Full import failed", error);
+      setFeedback({
+        type: "error",
+        message: "Import failed. इम्पोर्ट नहीं हो पाया.",
+      });
+    } finally {
+      setIsImporting(false);
+    }
+  }, [ensureDirectoryAccess, ensureStorageCapacity, programs]);
+
+  const handleStartMetadataImport = useCallback(async () => {
+    setIsImportDialogOpen(false);
+    setIsImporting(true);
+    try {
+      let fileHandle: FileSystemFileHandle;
+      try {
+        const [picked] = await window.showOpenFilePicker({
+          multiple: false,
+          types: [
+            {
+              description: "Catalog JSON",
+              accept: { "application/json": [".json"] },
+            },
+          ],
+        });
+        fileHandle = picked;
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          console.log("⚠️ Metadata import cancelled before file selection");
+          return;
+        }
+        throw error;
+      }
+
+      let metadataFile: File;
+      try {
+        metadataFile = await fileHandle.getFile();
+      } catch (error) {
+        console.error("❌ Could not read selected metadata file", error);
+        setFeedback({
+          type: "error",
+          message: "Could not read file. फाइल नहीं पढ़ी जा सकी.",
+        });
+        return;
+      }
+
+      let parsed: CatalogExportMetadata;
+      try {
+        const contents = await metadataFile.text();
+        parsed = JSON.parse(contents) as CatalogExportMetadata;
+      } catch (error) {
+        console.error("❌ Could not parse metadata file", error);
+        setFeedback({
+          type: "error",
+          message: "Invalid catalog JSON. JSON सही नहीं है.",
+        });
+        return;
+      }
+
+      const exportedPrograms = Array.isArray(parsed.programs) ? parsed.programs : [];
+      if (exportedPrograms.length === 0) {
+        setFeedback({
+          type: "error",
+          message: "No programs found in file. फाइल में कोई प्रोग्राम नहीं मिला.",
+        });
+        return;
+      }
+
+      const normalizedRecords = exportedPrograms.map((record, index) => normalizeExportedProgram(record, index));
+      setMetadataImportPrograms(normalizedRecords);
+      setMetadataImportErrors({});
+      const initialSelections: Record<string, File | null> = {};
+      for (const program of normalizedRecords) {
+        initialSelections[program.tempId] = null;
+      }
+      setMetadataImportSelections(initialSelections);
+      setMetadataImportDetails({
+        fileName: metadataFile.name,
+        exportedAt: parsed.exportedAt,
+        programCount: normalizedRecords.length,
+      });
+      setIsMetadataReviewOpen(true);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        console.log("⚠️ Metadata import cancelled");
+        return;
+      }
+      console.error("❌ Metadata import failed", error);
+      setFeedback({
+        type: "error",
+        message: "Import failed. इम्पोर्ट नहीं हो पाया.",
+      });
+    } finally {
+      setIsImporting(false);
+    }
+  }, []);
+
+  const handleMetadataFileSelect = useCallback(
+    (tempId: string, event: ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0] ?? null;
+      if (file && !file.name.toLowerCase().endsWith(".led")) {
+        setMetadataImportErrors((prev) => ({
+          ...prev,
+          [tempId]: "Only .led files are supported. केवल .led फाइल चुनें.",
+        }));
+        setMetadataImportSelections((prev) => ({
+          ...prev,
+          [tempId]: null,
+        }));
+        event.target.value = "";
+        return;
+      }
+      setMetadataImportErrors((prev) => {
+        if (!(tempId in prev)) {
+          return prev;
+        }
+        const { [tempId]: _removed, ...rest } = prev;
+        return rest;
+      });
+      setMetadataImportSelections((prev) => ({
+        ...prev,
+        [tempId]: file,
+      }));
+    },
+    []
+  );
+
+  const handleClearMetadataSelection = useCallback((tempId: string) => {
+    setMetadataImportSelections((prev) => ({
+      ...prev,
+      [tempId]: null,
+    }));
+    setMetadataImportErrors((prev) => {
+      if (!(tempId in prev)) {
+        return prev;
+      }
+      const { [tempId]: _removed, ...rest } = prev;
+      return rest;
+    });
+  }, []);
+
+  const handleCancelMetadataImport = useCallback(() => {
+    resetMetadataImportState();
+  }, [resetMetadataImportState]);
+
+  const handleConfirmMetadataImport = useCallback(async () => {
+    if (metadataImportPrograms.length === 0) {
+      setFeedback({
+        type: "error",
+        message: "Load a metadata file first. पहले JSON फाइल चुनें.",
+      });
+      return;
+    }
+
+    setIsProcessingMetadataImport(true);
+    setIsImporting(true);
+
+    try {
+      const targetDirectory = await ensureDirectoryAccess();
+      if (!targetDirectory) {
+        return;
+      }
+
+      const usedIds = new Set(programs.map((program) => program.id));
+      const createdPrograms: Program[] = [];
+      let missingCount = 0;
+
+      for (const [index, record] of metadataImportPrograms.entries()) {
+        const finalId = generateUniqueProgramId(record.id, usedIds);
+        const selectedFile = metadataImportSelections[record.tempId] ?? null;
+        let originalLedName = selectedFile?.name ?? record.originalLedName;
+        let storedFileName = buildStoredFileNameFromSource(finalId, originalLedName, index);
+        let fileSize = record.fileSizeBytes ?? null;
+        let isFileMissing = record.isFileMissing ?? false;
+
+        if (selectedFile) {
+          const hasSpace = await ensureStorageCapacity(selectedFile.size);
+          if (hasSpace) {
+            storedFileName = buildStoredFileNameFromSource(finalId, selectedFile.name, index);
+            try {
+              const fileHandle = await targetDirectory.getFileHandle(storedFileName, { create: true });
+              await writeFileToHandle(fileHandle, selectedFile);
+              fileSize = selectedFile.size;
+              isFileMissing = false;
+            } catch (error) {
+              console.error("❌ Failed to save selected LED file", error);
+              try {
+                await targetDirectory.removeEntry(storedFileName);
+              } catch (cleanupError) {
+                console.warn("⚠️ Could not clean up failed LED file", cleanupError);
+              }
+              isFileMissing = true;
+            }
+          } else {
+            isFileMissing = true;
+          }
+        } else {
+          isFileMissing = true;
+        }
+
+        if (isFileMissing) {
+          missingCount += 1;
+        }
+
+        const programToStore: Program = {
+          id: finalId,
+          name: record.name,
+          description: record.description,
+          originalLedName,
+          storedFileName,
+          photoDataUrl: record.photoDataUrl,
+          dateAdded: record.dateAdded,
+          fileSizeBytes: fileSize,
+          controller: record.controller ?? DEFAULT_CONTROLLER,
+          isFileMissing,
+        };
+
+        await saveStoredProgram(programToStore);
+        createdPrograms.push(programToStore);
+      }
+
+      if (createdPrograms.length > 0) {
+        setPrograms((prev) => sortPrograms([...prev, ...createdPrograms]));
+      }
+
+      const mappedCount = createdPrograms.length - missingCount;
+      let message = `Imported ${createdPrograms.length} programs from metadata.`;
+      if (mappedCount > 0 && missingCount > 0) {
+        message = `Imported ${createdPrograms.length} programs (${mappedCount} mapped, ${missingCount} pending).`;
+      } else if (missingCount > 0) {
+        message = `Imported ${createdPrograms.length} programs. Link LED files from Edit later.`;
+      }
+
+      setFeedback({
+        type: missingCount > 0 ? "error" : "success",
+        message,
+      });
+
+      console.log("🧾 Metadata import applied", {
+        total: createdPrograms.length,
+        mapped: mappedCount,
+        missing: missingCount,
+        sourceFile: metadataImportDetails?.fileName,
+      });
+
+      resetMetadataImportState();
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        console.log("⚠️ Metadata import cancelled during confirmation");
+        return;
+      }
+      console.error("❌ Applying metadata import failed", error);
+      setFeedback({
+        type: "error",
+        message: "Import failed. इम्पोर्ट नहीं हो पाया.",
+      });
+    } finally {
+      setIsProcessingMetadataImport(false);
+      setIsImporting(false);
+    }
+  }, [
+    ensureDirectoryAccess,
+    ensureStorageCapacity,
+    metadataImportDetails,
+    metadataImportPrograms,
+    metadataImportSelections,
+    programs,
+    resetMetadataImportState,
+  ]);
+
   const handleTextChange = (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = event.target;
     if (name === "programName" || name === "description") {
@@ -804,6 +1325,7 @@ function App(): JSX.Element {
           photoDataUrl: updatedPhotoDataUrl,
           fileSizeBytes: updatedFileSize,
           controller: formData.controller,
+          isFileMissing: formData.ledFile ? false : programToUpdate.isFileMissing ?? false,
         };
 
         await saveStoredProgram(updatedProgram);
@@ -846,6 +1368,7 @@ function App(): JSX.Element {
           dateAdded: new Date().toISOString(),
           fileSizeBytes: formData.ledFile!.size,
           controller: formData.controller,
+          isFileMissing: false,
         };
 
         await saveStoredProgram(newProgram);
@@ -880,6 +1403,12 @@ function App(): JSX.Element {
   };
 
   const handleDownload = async (program: Program) => {
+    if (program.isFileMissing) {
+      window.alert(
+        "LED file not linked yet. Edit the program to attach a LED file.\nLED फाइल अभी लिंक नहीं है। पहले एडिट करके जोड़ें।"
+      );
+      return;
+    }
     try {
       const directory = await ensureDirectoryAccess();
       if (!directory) {
@@ -985,6 +1514,13 @@ function App(): JSX.Element {
   const handleCopyToSdCard = async (program: Program) => {
     if (!("showDirectoryPicker" in window)) {
       window.alert("Browser does not support direct SD card access.\nकृपया Chrome या Edge का इस्तेमाल करें।");
+      return;
+    }
+
+    if (program.isFileMissing) {
+      window.alert(
+        "LED file not linked yet. Edit the program to attach a LED file before copying.\nLED फाइल अभी लिंक नहीं है। पहले एडिट करके जोड़ें।"
+      );
       return;
     }
 
@@ -1233,7 +1769,7 @@ function App(): JSX.Element {
         for (const [index, program] of programs.entries()) {
           let exportedLedFileName: string | null = null;
           let ledSize: number | null | undefined = program.fileSizeBytes;
-          let notes: string | undefined;
+          let notes: string | undefined = program.isFileMissing ? "LED file not linked locally" : undefined;
 
           try {
             const sourceFileHandle = await sourceDirectory.getFileHandle(program.storedFileName, { create: false });
@@ -1247,7 +1783,9 @@ function App(): JSX.Element {
             exportedLedFileName = exportFileName;
           } catch (error) {
             console.warn("⚠️ Failed to export LED file", { id: program.id, error });
-            notes = "LED file missing or permission denied";
+            notes = notes
+              ? `${notes}; LED file missing or permission denied`
+              : "LED file missing or permission denied";
           }
 
           exportedPrograms.push({
@@ -1261,6 +1799,7 @@ function App(): JSX.Element {
             fileSizeBytes: ledSize,
             photoDataUrl: program.photoDataUrl,
             controller: getProgramController(program),
+            isFileMissing: program.isFileMissing ?? false,
             ...(notes ? { notes } : {}),
           });
         }
@@ -1307,6 +1846,10 @@ function App(): JSX.Element {
         fileSizeBytes: program.fileSizeBytes ?? null,
         photoDataUrl: program.photoDataUrl,
         controller: getProgramController(program),
+        isFileMissing: program.isFileMissing ?? false,
+        ...(program.isFileMissing
+          ? { notes: "LED file not linked locally" }
+          : {}),
       }));
 
       const metadata: CatalogExportMetadata & { exportedAt: string; programCount: number } = {
@@ -1900,16 +2443,30 @@ function App(): JSX.Element {
                   {filteredPrograms.map((program) => {
                     const copyStatus = copyStatuses[program.id];
                     const isCopying = copyStatus?.status === "copying";
+                    const isFileMissing = program.isFileMissing === true;
                     const formattedFileSize =
                       program.fileSizeBytes !== undefined && program.fileSizeBytes !== null
                         ? formatFileSize(program.fileSizeBytes)
                         : null;
-                    const sizeDisplay =
-                      formattedFileSize ??
-                      (directoryPermission === "granted"
-                        ? "Size unavailable"
-                        : "Connect folder to view size");
+                    const sizeDisplay = isFileMissing
+                      ? "Link LED file to view size"
+                      : formattedFileSize ??
+                        (directoryPermission === "granted"
+                          ? "Size unavailable"
+                          : "Connect folder to view size");
                     const controllerLabel = formatControllerLabel(getProgramController(program));
+                    const copyPrimaryLabel = isCopying
+                      ? "Copying…"
+                      : isFileMissing
+                      ? "Link LED file first"
+                      : "Copy to SD Card";
+                    const copySecondaryLabel = isCopying
+                      ? "कॉपी जारी…"
+                      : isFileMissing
+                      ? "पहले LED फाइल जोड़ें"
+                      : "SD कार्ड में कॉपी करें";
+                    const downloadPrimaryLabel = isFileMissing ? "LED file missing" : "Download";
+                    const downloadSecondaryLabel = isFileMissing ? "LED फाइल नहीं मिली" : "डाउनलोड";
 
                     if (isGridView) {
                       return (
@@ -1936,9 +2493,14 @@ function App(): JSX.Element {
                                   <span className="font-medium text-foreground">Uploaded:</span>{" "}
                                   {new Date(program.dateAdded).toLocaleString()}
                                 </p>
-                                <p>
-                                  <span className="font-medium text-foreground">File:</span>{" "}
-                                  {program.originalLedName}
+                                <p className="flex flex-wrap items-center gap-2">
+                                  <span className="font-medium text-foreground">File:</span>
+                                  <span>{program.originalLedName}</span>
+                                  {isFileMissing ? (
+                                    <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
+                                      Pending
+                                    </span>
+                                  ) : null}
                                 </p>
                                 <p>
                                   <span className="font-medium text-foreground">Size:</span>{" "}
@@ -1950,6 +2512,17 @@ function App(): JSX.Element {
                                 </p>
                               </div>
                             </div>
+                            {isFileMissing ? (
+                              <div className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                                <BilingualText
+                                  primary="LED file not linked yet."
+                                  secondary="LED फाइल अभी लिंक नहीं है।"
+                                  align="start"
+                                  className="items-start text-left"
+                                  secondaryClassName="text-xs text-amber-700"
+                                />
+                              </div>
+                            ) : null}
                             {program.description && (
                               <p className="rounded-xl border border-border bg-muted/40 px-3 py-2 text-base text-foreground leading-relaxed">
                                 {program.description}
@@ -1961,18 +2534,18 @@ function App(): JSX.Element {
                                 variant="success"
                                 onClick={() => handleCopyToSdCard(program)}
                                 className="h-auto flex-wrap gap-3 whitespace-normal py-4 text-base shadow-lg shadow-emerald-200/50"
-                                disabled={isCopying}
+                                disabled={isCopying || isFileMissing}
                               >
                                 <HardDrive className="h-6 w-6 flex-shrink-0 text-white" aria-hidden="true" />
                                 <BilingualText
-                                  primary={isCopying ? "Copying…" : "Copy to SD Card"}
-                                  secondary={isCopying ? "कॉपी जारी…" : "SD कार्ड में कॉपी करें"}
+                                  primary={copyPrimaryLabel}
+                                  secondary={copySecondaryLabel}
                                   align="start"
                                   className="gap-0.5 text-left"
                                   secondaryClassName="text-xs text-emerald-100/90"
                                 />
                               </Button>
-                              {copyStatus && (
+                              {copyStatus && !isFileMissing ? (
                                 <div className="space-y-1 rounded-xl border border-border bg-muted/40 p-3" role="status" aria-live="polite">
                                   <div className="h-2 w-full rounded-full bg-muted">
                                     <div
@@ -2002,7 +2575,7 @@ function App(): JSX.Element {
                                     )}
                                   </p>
                                 </div>
-                              )}
+                              ) : null}
                             </div>
                             <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
                               <Button
@@ -2010,11 +2583,12 @@ function App(): JSX.Element {
                                 variant="outline"
                                 onClick={() => handleDownload(program)}
                                 className="w-full sm:flex-1"
+                                disabled={isFileMissing}
                               >
                                 <Download className="h-5 w-5" aria-hidden="true" />
                                 <BilingualText
-                                  primary="Download"
-                                  secondary="डाउनलोड"
+                                  primary={downloadPrimaryLabel}
+                                  secondary={downloadSecondaryLabel}
                                   align="start"
                                   className="items-start text-left"
                                   secondaryClassName="text-xs text-muted-foreground"
@@ -2073,28 +2647,40 @@ function App(): JSX.Element {
                           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                             <div className="min-w-0 space-y-1">
                               <p className="truncate text-lg font-semibold text-foreground">{program.name}</p>
+                              <p className="text-sm text-muted-foreground">File: {program.originalLedName}</p>
                               <p className="text-sm text-muted-foreground">Size: {sizeDisplay}</p>
                               <p className="text-sm text-muted-foreground">Controller: {controllerLabel}</p>
+                              {isFileMissing ? (
+                                <p className="text-sm font-medium text-amber-700">
+                                  <BilingualText
+                                    primary="LED file not linked yet"
+                                    secondary="LED फाइल अभी लिंक नहीं है"
+                                    align="start"
+                                    className="items-start text-left"
+                                    secondaryClassName="text-xs text-amber-700"
+                                  />
+                                </p>
+                              ) : null}
                             </div>
                             <Button
                               type="button"
                               variant="success"
                               onClick={() => handleCopyToSdCard(program)}
-                              disabled={isCopying}
+                              disabled={isCopying || isFileMissing}
                               className="h-auto w-full gap-3 px-4 py-3 text-sm shadow-lg shadow-emerald-200/50 sm:w-auto"
                               aria-label={`Copy ${program.name} to SD card`}
                             >
                               <HardDrive className="h-5 w-5 text-white" aria-hidden="true" />
                               <BilingualText
-                                primary={isCopying ? "Copying…" : "Copy to SD Card"}
-                                secondary={isCopying ? "कॉपी जारी…" : "SD कार्ड में कॉपी करें"}
+                                primary={copyPrimaryLabel}
+                                secondary={copySecondaryLabel}
                                 align="start"
                                 className="items-start text-left"
                                 secondaryClassName="text-xs text-emerald-100/90"
                               />
                             </Button>
                           </div>
-                          {copyStatus && (
+                          {copyStatus && !isFileMissing ? (
                             <div className="space-y-1 rounded-xl border border-border bg-muted/40 p-3" role="status" aria-live="polite">
                               <div className="h-2 w-full rounded-full bg-muted">
                                 <div
@@ -2124,7 +2710,66 @@ function App(): JSX.Element {
                                 )}
                               </p>
                             </div>
-                          )}
+                          ) : null}
+                          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => handleDownload(program)}
+                              disabled={isFileMissing}
+                              className="w-full sm:flex-1"
+                            >
+                              <Download className="h-5 w-5" aria-hidden="true" />
+                              <BilingualText
+                                primary={downloadPrimaryLabel}
+                                secondary={downloadSecondaryLabel}
+                                align="start"
+                                className="items-start text-left"
+                                secondaryClassName="text-xs text-muted-foreground"
+                              />
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => {
+                                setEditingProgramId(program.id);
+                                setFormData({
+                                  programName: program.name,
+                                  ledFile: null,
+                                  description: program.description ?? "",
+                                  photoFile: null,
+                                  controller: program.controller ?? DEFAULT_CONTROLLER,
+                                });
+                                setActiveTab("add");
+                                setShouldRemovePhoto(false);
+                              }}
+                              className="w-full sm:flex-1"
+                            >
+                              <Pencil className="h-5 w-5" aria-hidden="true" />
+                              <BilingualText
+                                primary="Edit"
+                                secondary="एडिट"
+                                align="start"
+                                className="items-start text-left"
+                                secondaryClassName="text-xs text-muted-foreground"
+                              />
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              onClick={() => handleDelete(program.id)}
+                              className="w-full border border-transparent text-red-600 hover:border-red-100 hover:bg-red-50 sm:flex-1"
+                            >
+                              <Trash2 className="h-5 w-5" aria-hidden="true" />
+                              <BilingualText
+                                primary="Delete"
+                                secondary="डिलीट"
+                                align="start"
+                                className="items-start text-left"
+                                secondaryClassName="text-xs text-red-500"
+                              />
+                            </Button>
+                          </div>
                         </CardContent>
                       </Card>
                     );
@@ -2659,6 +3304,237 @@ function App(): JSX.Element {
           </span>
         </div>
       </footer>
+      {isImportDialogOpen ? (
+        <div
+          className="fixed inset-0 z-40 flex items-center justify-center bg-background/80 px-4 py-6"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="import-dialog-title"
+          onClick={() => {
+            if (isImporting) {
+              return;
+            }
+            setIsImportDialogOpen(false);
+          }}
+        >
+          <div
+            className="w-full max-w-xl space-y-5 rounded-3xl border border-border bg-card p-6 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 id="import-dialog-title" className="text-xl font-semibold text-foreground">
+                  Import catalog backup
+                </h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Choose how you would like to bring saved programs onto this device.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsImportDialogOpen(false)}
+                className="rounded-full px-2 py-1 text-lg text-muted-foreground transition hover:bg-muted/60"
+                aria-label="Close import options"
+              >
+                ×
+              </button>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => {
+                  if (isImporting) {
+                    return;
+                  }
+                  void handleStartFullImport();
+                }}
+                disabled={isImporting}
+                className={cn(
+                  buttonVariants({ variant: "outline" }),
+                  "h-full rounded-2xl border-2 border-dashed border-border bg-background/70 p-4 text-left transition hover:border-primary hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
+                )}
+              >
+                <div className="flex items-center gap-3">
+                  <FolderDown className="h-6 w-6 text-primary" aria-hidden="true" />
+                  <span className="text-base font-semibold text-foreground">Full import</span>
+                </div>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Copy LED files and catalog.json from a previous export folder.
+                </p>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (isImporting) {
+                    return;
+                  }
+                  void handleStartMetadataImport();
+                }}
+                disabled={isImporting}
+                className={cn(
+                  buttonVariants({ variant: "outline" }),
+                  "h-full rounded-2xl border-2 border-dashed border-border bg-background/70 p-4 text-left transition hover:border-primary hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
+                )}
+              >
+                <div className="flex items-center gap-3">
+                  <FileJson className="h-6 w-6 text-primary" aria-hidden="true" />
+                  <span className="text-base font-semibold text-foreground">Metadata only</span>
+                </div>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Review programs from catalog.json and link LED files manually.
+                </p>
+              </button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Tip: metadata imports let you keep program details in sync even if LED files need to be remapped later.
+            </p>
+          </div>
+        </div>
+      ) : null}
+      {isMetadataReviewOpen ? (
+        <div
+          className="fixed inset-0 z-50 overflow-y-auto bg-background/90 px-4 py-8"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="metadata-review-title"
+        >
+          <div className="mx-auto w-full max-w-5xl space-y-5 rounded-3xl border border-border bg-card p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 id="metadata-review-title" className="text-2xl font-semibold text-foreground">
+                  Map LED files to imported programs
+                </h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Select LED files to copy into the connected folder. Skip any you will link later.
+                </p>
+                {metadataImportDetails ? (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Loaded {metadataImportDetails.programCount} programs from {metadataImportDetails.fileName}
+                    {metadataImportDetails.exportedAt
+                      ? ` · Exported ${new Date(metadataImportDetails.exportedAt).toLocaleString()}`
+                      : ""}
+                  </p>
+                ) : null}
+              </div>
+              <button
+                type="button"
+                onClick={handleCancelMetadataImport}
+                className="rounded-full px-2 py-1 text-lg text-muted-foreground transition hover:bg-muted/60"
+                aria-label="Close metadata import"
+                disabled={isProcessingMetadataImport}
+              >
+                ×
+              </button>
+            </div>
+            <div className="space-y-4">
+              {metadataImportPrograms.map((program, index) => {
+                const selectedFile = metadataImportSelections[program.tempId];
+                const errorMessage = metadataImportErrors[program.tempId];
+                const inputId = `metadata-led-${program.tempId}`;
+                return (
+                  <div
+                    key={program.tempId}
+                    className="rounded-2xl border border-border/70 bg-muted/30 p-4 sm:p-5"
+                  >
+                    <div className="flex flex-col gap-4 sm:flex-row sm:justify-between">
+                      <div className="space-y-2">
+                        <p className="text-base font-semibold text-foreground">
+                          {index + 1}. {program.name}
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                          Suggested LED name: {program.originalLedName}
+                        </p>
+                        {program.exportedLedFileName ? (
+                          <p className="text-xs text-muted-foreground">
+                            Backup file: {program.exportedLedFileName}
+                          </p>
+                        ) : (
+                          <p className="text-xs text-amber-600">
+                            No LED file included in the backup.
+                          </p>
+                        )}
+                        {program.notes ? (
+                          <p className="text-xs text-muted-foreground">Notes: {program.notes}</p>
+                        ) : null}
+                      </div>
+                      <div className="flex flex-col items-start gap-2 sm:items-end">
+                        <input
+                          id={inputId}
+                          type="file"
+                          accept=".led"
+                          className="sr-only"
+                          onChange={(event) => handleMetadataFileSelect(program.tempId, event)}
+                          disabled={isProcessingMetadataImport}
+                        />
+                        <div className="flex flex-wrap items-center gap-2">
+                          <label
+                            htmlFor={inputId}
+                            className={cn(
+                              buttonVariants({ variant: "outline", size: "sm" }),
+                              "cursor-pointer px-4",
+                              isProcessingMetadataImport ? "pointer-events-none opacity-60" : ""
+                            )}
+                          >
+                            {selectedFile ? "Change LED file" : "Choose LED file"}
+                          </label>
+                          {selectedFile ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => handleClearMetadataSelection(program.tempId)}
+                              disabled={isProcessingMetadataImport}
+                            >
+                              Clear
+                            </Button>
+                          ) : null}
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          {selectedFile
+                            ? `Selected: ${selectedFile.name}`
+                            : "No LED file selected. Program will stay pending."}
+                        </p>
+                        {errorMessage ? (
+                          <p className="text-xs font-medium text-red-600">{errorMessage}</p>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={handleCancelMetadataImport}
+                disabled={isProcessingMetadataImport}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={() => {
+                  if (isProcessingMetadataImport) {
+                    return;
+                  }
+                  void handleConfirmMetadataImport();
+                }}
+                disabled={isProcessingMetadataImport}
+              >
+                {isProcessingMetadataImport ? (
+                  <span className="flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                    Saving…
+                  </span>
+                ) : (
+                  "Save to catalog"
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
