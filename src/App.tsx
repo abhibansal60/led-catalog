@@ -1793,7 +1793,7 @@ function App(): JSX.Element {
           >
             <Button
               type="button"
-              variant="ghost"
+              variant={isViewTab ? "primary" : "ghost"}
               id="catalog-view-tab"
               role="tab"
               aria-selected={isViewTab}
@@ -1802,8 +1802,8 @@ function App(): JSX.Element {
               className={cn(
                 "w-full justify-start gap-3 rounded-xl px-4 py-3 text-base font-semibold transition sm:flex-1",
                 isViewTab
-                  ? "bg-primary text-primary-foreground shadow-md shadow-primary/40"
-                  : "bg-transparent text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                  ? "shadow-md shadow-primary/40 hover:bg-primary/90"
+                  : "text-muted-foreground hover:text-foreground"
               )}
             >
               <FolderOpen className="h-5 w-5" aria-hidden="true" />
@@ -1820,7 +1820,7 @@ function App(): JSX.Element {
             </Button>
             <Button
               type="button"
-              variant="ghost"
+              variant={isAddTab ? "primary" : "ghost"}
               id="catalog-add-tab"
               role="tab"
               aria-selected={isAddTab}
@@ -1829,8 +1829,8 @@ function App(): JSX.Element {
               className={cn(
                 "w-full justify-start gap-3 rounded-xl px-4 py-3 text-base font-semibold transition sm:flex-1",
                 isAddTab
-                  ? "bg-primary text-primary-foreground shadow-md shadow-primary/40"
-                  : "bg-transparent text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                  ? "shadow-md shadow-primary/40 hover:bg-primary/90"
+                  : "text-muted-foreground hover:text-foreground"
               )}
             >
               <PlusCircle className="h-5 w-5" aria-hidden="true" />
@@ -1847,7 +1847,7 @@ function App(): JSX.Element {
             </Button>
             <Button
               type="button"
-              variant="ghost"
+              variant={isTutorialTab ? "primary" : "ghost"}
               id="catalog-tutorial-tab"
               role="tab"
               aria-selected={isTutorialTab}
@@ -1856,8 +1856,8 @@ function App(): JSX.Element {
               className={cn(
                 "w-full justify-start gap-3 rounded-xl px-4 py-3 text-base font-semibold transition sm:flex-1",
                 isTutorialTab
-                  ? "bg-primary text-primary-foreground shadow-md shadow-primary/40"
-                  : "bg-transparent text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                  ? "shadow-md shadow-primary/40 hover:bg-primary/90"
+                  : "text-muted-foreground hover:text-foreground"
               )}
             >
               <BookOpenCheck className="h-5 w-5" aria-hidden="true" />
