@@ -2,6 +2,7 @@
   "name": "bansal-lights-led-catalog",
   "private": true,
   "version": "1.0.0",
+  "appVersion": "051125-01",
   "type": "module",
   "scripts": {
     "dev": "vite",
