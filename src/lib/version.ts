@@ -1,6 +1,17 @@
 import packageInfo from "../../package.json" assert { type: "json" };
 
 const DEFAULT_BUILD_SUFFIX = "01";
+const IST_OFFSET_MINUTES = 330;
+
+const readEnvString = (value: unknown): string | undefined => {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+
+  return trimmed.length > 0 ? trimmed : undefined;
+};
 
 const toTwoDigits = (value: number): string => value.toString().padStart(2, "0");
 
@@ -59,10 +70,7 @@ const normaliseDatedInput = (input: string): string | null => {
 };
 
 const resolveVersionSource = (): string | null => {
-  const envVersion =
-    typeof import.meta.env.VITE_APP_VERSION === "string"
-      ? import.meta.env.VITE_APP_VERSION
-      : undefined;
+  const envVersion = readEnvString(import.meta.env.VITE_APP_VERSION);
 
   const candidateSources = [
     envVersion,
@@ -86,19 +94,11 @@ const resolveVersionSource = (): string | null => {
 
 const buildFallbackVersion = (): string => `${formatDateToDdmmyy(new Date())}-${DEFAULT_BUILD_SUFFIX}`;
 
-const resolveBuildMetadata = (): string | null => {
-  const timestamp =
-    typeof import.meta.env.VITE_BUILD_TIMESTAMP === "string"
-      ? import.meta.env.VITE_BUILD_TIMESTAMP
-      : undefined;
-  const commitRef =
-    typeof import.meta.env.VITE_COMMIT_REF === "string" && import.meta.env.VITE_COMMIT_REF
-      ? import.meta.env.VITE_COMMIT_REF
-      : undefined;
-  const deploymentId =
-    typeof import.meta.env.VITE_DEPLOYMENT_ID === "string" && import.meta.env.VITE_DEPLOYMENT_ID
-      ? import.meta.env.VITE_DEPLOYMENT_ID
-      : undefined;
+const resolveBuildTimestamp = (): string | null => readEnvString(import.meta.env.VITE_BUILD_TIMESTAMP) ?? null;
+
+const resolveBuildMetadata = (timestamp: string | null): string | null => {
+  const commitRef = readEnvString(import.meta.env.VITE_COMMIT_REF);
+  const deploymentId = readEnvString(import.meta.env.VITE_DEPLOYMENT_ID);
 
   const parts: string[] = [];
 
@@ -125,9 +125,27 @@ const resolveBuildMetadata = (): string | null => {
 };
 
 const baseVersion = resolveVersionSource() ?? buildFallbackVersion();
-const buildMetadata = resolveBuildMetadata();
+const buildTimestamp = resolveBuildTimestamp();
+const buildMetadata = resolveBuildMetadata(buildTimestamp);
 
-const formatVersionForDisplay = (value: string): string => {
+const formatTimestampToIstLabel = (value: string): string | null => {
+  const parsed = new Date(value);
+
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  const utcMinutes = parsed.getUTCHours() * 60 + parsed.getUTCMinutes();
+  const totalMinutes = utcMinutes + IST_OFFSET_MINUTES;
+  const minutesInDay = 24 * 60;
+  const normalisedMinutes = ((totalMinutes % minutesInDay) + minutesInDay) % minutesInDay;
+  const hours = Math.floor(normalisedMinutes / 60);
+  const minutes = normalisedMinutes % 60;
+
+  return `${toTwoDigits(hours)}:${toTwoDigits(minutes)} IST`;
+};
+
+const formatVersionForDisplay = (value: string, istTime: string | null): string => {
   const match = value.match(/^(\d{2})(\d{2})(\d{2})-(\d{2})$/);
   if (!match) {
     return value;
@@ -136,10 +154,13 @@ const formatVersionForDisplay = (value: string): string => {
   const [, dd, mm, yy, suffix] = match;
   const fullYear = Number.parseInt(yy, 10);
   const century = fullYear >= 70 ? "19" : "20";
+  const formattedDate = `${dd}.${mm}.${century}${yy}-${suffix}`;
 
-  return `${dd}.${mm}.${century}${yy}-${suffix}`;
+  return istTime ? `${formattedDate} (${istTime})` : formattedDate;
 };
 
 export const APP_VERSION_RAW = baseVersion;
 export const APP_VERSION_DETAILS = buildMetadata;
-export const APP_VERSION = formatVersionForDisplay(baseVersion);
+const displayTimestamp = buildTimestamp ?? new Date().toISOString();
+const istTime = formatTimestampToIstLabel(displayTimestamp);
+export const APP_VERSION = formatVersionForDisplay(baseVersion, istTime);
