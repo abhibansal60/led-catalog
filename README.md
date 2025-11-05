@@ -75,6 +75,32 @@ To enable preview deploys for pull requests, extend the workflow with an `on: pu
   - [ ] Install as PWA and launch offline.
 - Watch the browser console logs for “✅/❌” messages when debugging.
 
+## Step-by-Step Tutorial (for Dad)
+These friendly steps walk through the common job: adding a fresh LED program, copying it to an SD card, and double-checking that everything worked. Keep this page open on your phone or print it out for quick help.
+
+### A. Add a new program in the app
+1. **Open the LED Catalog app** on your phone or computer. If you use it as a shortcut on your home screen, tap that icon.
+2. **Press “Add Program”.** A clean form will appear.
+3. **Name the program.** Type something simple that you will remember, like “Diwali Gate 2024”.
+4. **Pick the `.led` file.** Tap “Choose File”, then select the program file you received from the designer or copied from another device.
+5. _(Optional)_ **Add a photo or note.** A quick picture of the installed lights or a short message like “Use on Panel A” helps later.
+6. **Save.** Tap “Save Program”. You will see the new card appear on the home screen.
+
+### B. Copy the program to an SD card
+1. **Insert the SD card** from the T-series controller into your phone (with an adapter) or a computer.
+2. **Tap the “Download” button** on the new program card. The app always names the file `00_program.led`, which the controller expects.
+3. **Choose the SD card as the destination.** On a phone, select “Files” → SD card. On a computer, save to the drive letter that matches the SD card.
+4. **Wait for the copy to finish.** You should see a short progress bar or a “Download complete” message.
+
+### C. Check that everything worked
+1. **Open the SD card folder** in your Files app or File Explorer.
+2. **Confirm the file name.** Make sure `00_program.led` is listed. If another version already existed, delete the old one so only the fresh file remains.
+3. **Look at the file size.** It should not be zero bytes. If it shows `0 KB`, copy the file again.
+4. **Safely remove the SD card.** Use “Eject” on a computer or “Unmount” on a phone before pulling the card out.
+5. **Test on the controller.** Insert the SD card into the LED controller, power it on, and press “Play”. The lights should follow the new pattern. If not, repeat the download and copy steps.
+
+> Quick reminder: the app keeps all saved programs inside the device. If you clear the browser data or switch phones, re-download any programs you need from your backups.
+
 ## File Layout
 ```
 .
