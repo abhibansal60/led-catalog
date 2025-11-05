@@ -16,6 +16,7 @@ export type StoredProgram = {
   dateAdded: string;
   fileSizeBytes?: number | null;
   controller?: ControllerType;
+  isFileMissing?: boolean;
 };
 
 type StoredSettings = {
