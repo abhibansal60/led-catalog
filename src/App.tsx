@@ -31,7 +31,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import { APP_VERSION } from "@/lib/version";
+import { APP_VERSION, APP_VERSION_DETAILS } from "@/lib/version";
 import {
   clearPrograms as clearStoredPrograms,
   deleteProgram as deleteStoredProgram,
@@ -116,6 +116,61 @@ const readFileAsDataUrl = (file: File): Promise<string> =>
 
 const sanitizeFileName = (name: string): string =>
   name.replace(/[\\/:*?"<>|]/g, "_").replace(/\s+/g, "-");
+
+const writeFileToHandle = async (
+  fileHandle: FileSystemFileHandle,
+  file: File,
+  onProgress?: (progress: number) => void
+): Promise<void> => {
+  const writable = await fileHandle.createWritable();
+  const totalBytes = Math.max(file.size, 1);
+  const reportProgress = (writtenBytes: number) => {
+    if (!onProgress) {
+      return;
+    }
+    const ratio = Math.min(1, writtenBytes / totalBytes);
+    onProgress(Number.isFinite(ratio) ? ratio : 0);
+  };
+
+  let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+  let bytesWritten = 0;
+
+  try {
+    if (typeof file.stream === "function") {
+      reader = file.stream().getReader();
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          break;
+        }
+        if (value) {
+          await writable.write(value);
+          const chunkBytes = value.length ?? value.byteLength ?? 0;
+          bytesWritten += chunkBytes;
+          reportProgress(bytesWritten);
+        }
+      }
+    } else {
+      await writable.write(file);
+      bytesWritten = totalBytes;
+    }
+
+    await writable.close();
+    reportProgress(totalBytes);
+  } catch (error) {
+    try {
+      await writable.abort();
+    } catch (abortError) {
+      console.warn("⚠️ Could not abort write stream", abortError);
+    }
+    throw error;
+  } finally {
+    if (reader) {
+      reader.releaseLock();
+    }
+  }
+};
 
 const sortPrograms = (items: Program[]): Program[] =>
   [...items].sort(
@@ -203,6 +258,7 @@ function App(): JSX.Element {
   const [formData, setFormData] = useState<ProgramFormState>(getEmptyForm);
   const [feedback, setFeedback] = useState<FeedbackMessage | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [saveProgress, setSaveProgress] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<"view" | "add" | "tutorial">("view");
   const [editingProgramId, setEditingProgramId] = useState<string | null>(null);
   const [shouldRemovePhoto, setShouldRemovePhoto] = useState(false);
@@ -216,6 +272,14 @@ function App(): JSX.Element {
   const [searchTerm, setSearchTerm] = useState("");
   const [isExporting, setIsExporting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+
+  const savingPercent = saveProgress === null ? null : Math.min(100, Math.round(saveProgress * 100));
+  const savingStatusMessage =
+    saveProgress === null
+      ? "Saving changes…"
+      : savingPercent !== null && savingPercent >= 100
+      ? "Finishing up…"
+      : `Saving file… ${savingPercent ?? 0}%`;
 
   useEffect(() => {
     let isMounted = true;
@@ -616,6 +680,7 @@ function App(): JSX.Element {
     }
 
     setIsSaving(true);
+    setSaveProgress(formData.ledFile ? 0 : null);
     let createdFileName: string | null = null;
     let createdFileWasReplacement = false;
     let targetDirectory: FileSystemDirectoryHandle | null = null;
@@ -654,9 +719,7 @@ function App(): JSX.Element {
 
           updatedStoredFileName = `${programToUpdate.id}-${sanitizeFileName(formData.ledFile.name)}`;
           const fileHandle = await targetDirectory.getFileHandle(updatedStoredFileName, { create: true });
-          const writable = await fileHandle.createWritable();
-          await writable.write(formData.ledFile);
-          await writable.close();
+          await writeFileToHandle(fileHandle, formData.ledFile, (progress) => setSaveProgress(progress));
           createdFileName = updatedStoredFileName;
           createdFileWasReplacement = updatedStoredFileName === programToUpdate.storedFileName;
 
@@ -714,9 +777,7 @@ function App(): JSX.Element {
         const id = `${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
         const storedFileName = `${id}-${sanitizeFileName(formData.ledFile!.name)}`;
         const fileHandle = await targetDirectory.getFileHandle(storedFileName, { create: true });
-        const writable = await fileHandle.createWritable();
-        await writable.write(formData.ledFile!);
-        await writable.close();
+        await writeFileToHandle(fileHandle, formData.ledFile!, (progress) => setSaveProgress(progress));
         createdFileName = storedFileName;
 
         const photoDataUrl = formData.photoFile ? await readFileAsDataUrl(formData.photoFile) : null;
@@ -759,6 +820,7 @@ function App(): JSX.Element {
           : "Could not save program. प्रोग्राम सेव नहीं हुआ.",
       });
     } finally {
+      setSaveProgress(null);
       setIsSaving(false);
     }
   };
@@ -2447,8 +2509,39 @@ function App(): JSX.Element {
                     />
                   </Button>
                 </div>
+                {isSaving ? (
+                  <div className="mt-4 w-full">
+                    <div
+                      role="status"
+                      aria-live="polite"
+                      className="flex items-center gap-2 text-sm text-muted-foreground"
+                    >
+                      <span aria-hidden="true">⏳</span>
+                      <span>{savingStatusMessage}</span>
+                    </div>
+                    <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                      <div
+                        className={cn(
+                          "h-full rounded-full bg-primary/80 transition-[width]",
+                          saveProgress === null ? "saving-progress-bar--indeterminate" : ""
+                        )}
+                        role="progressbar"
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-valuenow={savingPercent ?? undefined}
+                        aria-label="Saving progress"
+                        aria-valuetext={savingStatusMessage}
+                        style={
+                          saveProgress === null
+                            ? { width: "40%" }
+                            : { width: `${Math.min(100, Math.max(2, savingPercent ?? 0))}%` }
+                        }
+                      />
+                    </div>
+                  </div>
+                ) : null}
               </form>
-              </CardContent>
+            </CardContent>
             </Card>
           </section>
         )}
@@ -2625,13 +2718,12 @@ function App(): JSX.Element {
       <footer className="border-t border-border bg-muted/40">
         <div className="mx-auto flex w-full max-w-4xl flex-col items-center justify-between gap-2 px-4 py-4 text-xs text-muted-foreground sm:flex-row sm:text-sm">
           <span className="font-medium text-foreground">Bansal Lights · LED Catalog</span>
-          <BilingualText
-            primary={`Version ${APP_VERSION}`}
-            secondary={`संस्करण ${APP_VERSION}`}
-            align="start"
-            className="items-start text-left"
-            secondaryClassName="text-[11px] text-muted-foreground/80 sm:text-xs"
-          />
+          <span
+            className="text-xs text-muted-foreground sm:text-sm"
+            title={APP_VERSION_DETAILS ?? undefined}
+          >
+            Version {APP_VERSION}
+          </span>
         </div>
       </footer>
     </div>

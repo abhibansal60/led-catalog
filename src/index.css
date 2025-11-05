@@ -78,3 +78,20 @@
 .hidden-troubleshoot-button:hover {
   opacity: 1;
 }
+
+@keyframes saving-progress-indeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  50% {
+    transform: translateX(-15%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.saving-progress-bar--indeterminate {
+  animation: saving-progress-indeterminate 1.4s ease-in-out infinite;
+  will-change: transform;
+}

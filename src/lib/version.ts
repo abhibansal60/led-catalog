@@ -35,7 +35,14 @@ const normaliseDatedInput = (input: string): string | null => {
     return null;
   }
 
-  const ddmmyyMatch = trimmed.match(/^(\d{2})(\d{2})(\d{2})(?:[-_]?(\d{1,2}))?$/);
+  const ddmmyyyyMatch = trimmed.match(/^(\d{2})[./-]?(\d{2})[./-]?(\d{4})(?:[-_]?(\d{1,2}))?$/);
+  if (ddmmyyyyMatch) {
+    const [, dd, mm, yyyy, suffix] = ddmmyyyyMatch;
+    const yy = yyyy.slice(-2);
+    return `${dd}${mm}${yy}-${padBuildSuffix(suffix)}`;
+  }
+
+  const ddmmyyMatch = trimmed.match(/^(\d{2})[./-]?(\d{2})[./-]?(\d{2})(?:[-_]?(\d{1,2}))?$/);
   if (ddmmyyMatch) {
     const [, dd, mm, yy, suffix] = ddmmyyMatch;
     return `${dd}${mm}${yy}-${padBuildSuffix(suffix)}`;
@@ -120,4 +127,19 @@ const resolveBuildMetadata = (): string | null => {
 const baseVersion = resolveVersionSource() ?? buildFallbackVersion();
 const buildMetadata = resolveBuildMetadata();
 
-export const APP_VERSION = buildMetadata ? `${baseVersion} (${buildMetadata})` : baseVersion;
+const formatVersionForDisplay = (value: string): string => {
+  const match = value.match(/^(\d{2})(\d{2})(\d{2})-(\d{2})$/);
+  if (!match) {
+    return value;
+  }
+
+  const [, dd, mm, yy, suffix] = match;
+  const fullYear = Number.parseInt(yy, 10);
+  const century = fullYear >= 70 ? "19" : "20";
+
+  return `${dd}.${mm}.${century}${yy}-${suffix}`;
+};
+
+export const APP_VERSION_RAW = baseVersion;
+export const APP_VERSION_DETAILS = buildMetadata;
+export const APP_VERSION = formatVersionForDisplay(baseVersion);
