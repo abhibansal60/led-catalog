@@ -4,7 +4,6 @@ import React, {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
 import {
@@ -365,7 +364,7 @@ function App(): JSX.Element {
   const [copyStatuses, setCopyStatuses] = useState<Record<string, CopyStatus>>({});
   const [searchTerm, setSearchTerm] = useState("");
   const [exportInProgress, setExportInProgress] = useState<"full" | "json" | null>(null);
-  const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
+  const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
   const [isMetadataReviewOpen, setIsMetadataReviewOpen] = useState(false);
@@ -381,7 +380,6 @@ function App(): JSX.Element {
   const [metadataImportSelections, setMetadataImportSelections] = useState<Record<string, File | null>>({});
   const [metadataImportErrors, setMetadataImportErrors] = useState<Record<string, string>>({});
   const [isProcessingMetadataImport, setIsProcessingMetadataImport] = useState(false);
-  const exportMenuRef = useRef<HTMLDivElement | null>(null);
 
   const isExporting = exportInProgress !== null;
 
@@ -471,37 +469,6 @@ function App(): JSX.Element {
       isMounted = false;
     };
   }, []);
-
-  useEffect(() => {
-    if (!isExportMenuOpen) {
-      return;
-    }
-
-    const handlePointerDown = (event: PointerEvent) => {
-      if (!exportMenuRef.current) {
-        return;
-      }
-
-      const target = event.target as Node | null;
-      if (target && !exportMenuRef.current.contains(target)) {
-        setIsExportMenuOpen(false);
-      }
-    };
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setIsExportMenuOpen(false);
-      }
-    };
-
-    document.addEventListener("pointerdown", handlePointerDown);
-    document.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      document.removeEventListener("pointerdown", handlePointerDown);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [isExportMenuOpen]);
 
   useEffect(() => {
     if (!editingProgramId) {
@@ -2159,102 +2126,36 @@ function App(): JSX.Element {
                     )}
                     <span className="sr-only">{isImporting ? "Importing…" : "Import backup · बैकअप जोड़ें"}</span>
                   </Button>
-                  <div className="relative" ref={exportMenuRef}>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-11 w-11 rounded-xl border border-border/60 bg-background/80 text-muted-foreground hover:text-foreground"
-                      onClick={() => {
-                        if (isExporting) {
-                          return;
-                        }
-                        setIsExportMenuOpen((prev) => !prev);
-                      }}
-                      disabled={isExporting}
-                      aria-expanded={isExportMenuOpen}
-                      aria-haspopup="menu"
-                      aria-controls="export-menu"
-                      aria-busy={isExporting}
-                      title={isExporting ? "Exporting backup…" : "Export backup options"}
-                    >
-                      {isExporting ? (
-                        <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
-                      ) : (
-                        <Download className="h-5 w-5" aria-hidden="true" />
-                      )}
-                      <span className="sr-only">
-                        {isExporting
-                          ? "Exporting…"
-                          : isExportMenuOpen
-                          ? "Hide export options · एक्सपोर्ट विकल्प छुपाएँ"
-                          : "Export backup options · एक्सपोर्ट विकल्प"}
-                      </span>
-                    </Button>
-                    {isExportMenuOpen ? (
-                      <div
-                        id="export-menu"
-                        role="menu"
-                        aria-label="Export options"
-                        className="absolute right-0 z-20 mt-2 w-72 rounded-2xl border border-border/80 bg-card/95 p-2 shadow-lg"
-                      >
-                        <button
-                          type="button"
-                          role="menuitem"
-                          className="flex w-full items-start gap-3 rounded-xl px-3 py-2 text-left transition hover:bg-muted/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-70"
-                          onClick={() => {
-                            setIsExportMenuOpen(false);
-                            void handleExportCatalog("full");
-                          }}
-                          disabled={isExporting}
-                        >
-                          <FolderDown className="mt-1 h-5 w-5 text-muted-foreground" aria-hidden="true" />
-                          <div className="flex flex-1 flex-col gap-1">
-                            <BilingualText
-                              primary="Full export"
-                              secondary="संपूर्ण बैकअप"
-                              align="start"
-                              className="items-start text-left text-sm font-semibold"
-                              secondaryClassName="text-xs text-muted-foreground/80"
-                            />
-                            <p className="text-xs text-muted-foreground">
-                              Files + catalog.json. फाइलें और JSON दोनों सेव करें।
-                            </p>
-                          </div>
-                          {exportInProgress === "full" ? (
-                            <Loader2 className="ml-2 h-4 w-4 animate-spin text-muted-foreground" aria-hidden="true" />
-                          ) : null}
-                        </button>
-                        <button
-                          type="button"
-                          role="menuitem"
-                          className="mt-1 flex w-full items-start gap-3 rounded-xl px-3 py-2 text-left transition hover:bg-muted/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-70"
-                          onClick={() => {
-                            setIsExportMenuOpen(false);
-                            void handleExportCatalog("json");
-                          }}
-                          disabled={isExporting}
-                        >
-                          <FileJson className="mt-1 h-5 w-5 text-muted-foreground" aria-hidden="true" />
-                          <div className="flex flex-1 flex-col gap-1">
-                            <BilingualText
-                              primary="Quick JSON backup"
-                              secondary="त्वरित JSON बैकअप"
-                              align="start"
-                              className="items-start text-left text-sm font-semibold"
-                              secondaryClassName="text-xs text-muted-foreground/80"
-                            />
-                            <p className="text-xs text-muted-foreground">
-                              Metadata only. दूसरे डिवाइस पर जल्दी से पुनर्स्थापित करें।
-                            </p>
-                          </div>
-                          {exportInProgress === "json" ? (
-                            <Loader2 className="ml-2 h-4 w-4 animate-spin text-muted-foreground" aria-hidden="true" />
-                          ) : null}
-                        </button>
-                      </div>
-                    ) : null}
-                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-11 w-11 rounded-xl border border-border/60 bg-background/80 text-muted-foreground hover:text-foreground"
+                    onClick={() => {
+                      if (isExporting) {
+                        return;
+                      }
+                      setIsExportDialogOpen(true);
+                    }}
+                    disabled={isExporting}
+                    aria-haspopup="dialog"
+                    aria-expanded={isExportDialogOpen}
+                    aria-busy={isExporting}
+                    title={isExporting ? "Exporting backup…" : "Export backup"}
+                  >
+                    {isExporting ? (
+                      <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
+                    ) : (
+                      <Download className="h-5 w-5" aria-hidden="true" />
+                    )}
+                    <span className="sr-only">
+                      {isExporting
+                        ? "Exporting…"
+                        : isExportDialogOpen
+                        ? "Hide export options · एक्सपोर्ट विकल्प छुपाएँ"
+                        : "Export backup · बैकअप सेव करें"}
+                    </span>
+                  </Button>
                 </div>
               </div>
             </div>
@@ -3304,6 +3205,102 @@ function App(): JSX.Element {
           </span>
         </div>
       </footer>
+      {isExportDialogOpen ? (
+        <div
+          className="fixed inset-0 z-40 flex items-center justify-center bg-background/80 px-4 py-6"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="export-dialog-title"
+          onClick={() => {
+            if (isExporting) {
+              return;
+            }
+            setIsExportDialogOpen(false);
+          }}
+        >
+          <div
+            className="w-full max-w-xl space-y-5 rounded-3xl border border-border bg-card p-6 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 id="export-dialog-title" className="text-xl font-semibold text-foreground">
+                  Export catalog backup
+                </h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Choose how you would like to save programs from this device.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsExportDialogOpen(false)}
+                className="rounded-full px-2 py-1 text-lg text-muted-foreground transition hover:bg-muted/60"
+                aria-label="Close export options"
+                disabled={isExporting}
+              >
+                ×
+              </button>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => {
+                  if (isExporting) {
+                    return;
+                  }
+                  setIsExportDialogOpen(false);
+                  void handleExportCatalog("full");
+                }}
+                disabled={isExporting}
+                className={cn(
+                  buttonVariants({ variant: "outline" }),
+                  "h-full rounded-2xl border-2 border-dashed border-border bg-background/70 p-4 text-left transition hover:border-primary hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
+                )}
+              >
+                <div className="flex items-start gap-3">
+                  <FolderDown className="h-6 w-6 text-primary" aria-hidden="true" />
+                  <div>
+                    <p className="text-base font-semibold text-foreground">Full export</p>
+                    <p className="text-xs text-muted-foreground/90">संपूर्ण बैकअप</p>
+                  </div>
+                </div>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Copy LED files and catalog.json into a backup folder.
+                </p>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (isExporting) {
+                    return;
+                  }
+                  setIsExportDialogOpen(false);
+                  void handleExportCatalog("json");
+                }}
+                disabled={isExporting}
+                className={cn(
+                  buttonVariants({ variant: "outline" }),
+                  "h-full rounded-2xl border-2 border-dashed border-border bg-background/70 p-4 text-left transition hover:border-primary hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
+                )}
+              >
+                <div className="flex items-start gap-3">
+                  <FileJson className="h-6 w-6 text-primary" aria-hidden="true" />
+                  <div>
+                    <p className="text-base font-semibold text-foreground">Quick JSON backup</p>
+                    <p className="text-xs text-muted-foreground/90">त्वरित JSON बैकअप</p>
+                  </div>
+                </div>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Save catalog metadata only for a fast restore on another device.
+                </p>
+              </button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Tip: run a full export after major edits to keep LED files and metadata together.
+            </p>
+          </div>
+        </div>
+      ) : null}
       {isImportDialogOpen ? (
         <div
           className="fixed inset-0 z-40 flex items-center justify-center bg-background/80 px-4 py-6"
