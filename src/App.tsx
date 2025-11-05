@@ -30,6 +30,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { APP_VERSION } from "@/lib/version";
 import {
   clearPrograms as clearStoredPrograms,
   deleteProgram as deleteStoredProgram,
@@ -2323,6 +2324,18 @@ function App(): JSX.Element {
           </section>
         )}
       </main>
+      <footer className="border-t border-border bg-muted/40">
+        <div className="mx-auto flex w-full max-w-4xl flex-col items-center justify-between gap-2 px-4 py-4 text-xs text-muted-foreground sm:flex-row sm:text-sm">
+          <span className="font-medium text-foreground">Bansal Lights · LED Catalog</span>
+          <BilingualText
+            primary={`Version ${APP_VERSION}`}
+            secondary={`संस्करण ${APP_VERSION}`}
+            align="start"
+            className="items-start text-left"
+            secondaryClassName="text-[11px] text-muted-foreground/80 sm:text-xs"
+          />
+        </div>
+      </footer>
     </div>
   );
 }
