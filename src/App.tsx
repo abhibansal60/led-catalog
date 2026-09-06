@@ -34,6 +34,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { APP_VERSION, APP_VERSION_DETAILS } from "@/lib/version";
+import { writeFileToHandle } from "@/lib/writeFileToHandle";
 import {
   clearPrograms as clearStoredPrograms,
   deleteProgram as deleteStoredProgram,
@@ -118,61 +119,6 @@ const readFileAsDataUrl = (file: File): Promise<string> =>
 
 const sanitizeFileName = (name: string): string =>
   name.replace(/[\\/:*?"<>|]/g, "_").replace(/\s+/g, "-");
-
-const writeFileToHandle = async (
-  fileHandle: FileSystemFileHandle,
-  file: File,
-  onProgress?: (progress: number) => void
-): Promise<void> => {
-  const writable = await fileHandle.createWritable();
-  const totalBytes = Math.max(file.size, 1);
-  const reportProgress = (writtenBytes: number) => {
-    if (!onProgress) {
-      return;
-    }
-    const ratio = Math.min(1, writtenBytes / totalBytes);
-    onProgress(Number.isFinite(ratio) ? ratio : 0);
-  };
-
-  let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
-  let bytesWritten = 0;
-
-  try {
-    if (typeof file.stream === "function") {
-      reader = file.stream().getReader();
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) {
-          break;
-        }
-        if (value) {
-          await writable.write(value);
-          const chunkBytes = value.length ?? value.byteLength ?? 0;
-          bytesWritten += chunkBytes;
-          reportProgress(bytesWritten);
-        }
-      }
-    } else {
-      await writable.write(file);
-      bytesWritten = totalBytes;
-    }
-
-    await writable.close();
-    reportProgress(totalBytes);
-  } catch (error) {
-    try {
-      await writable.abort();
-    } catch (abortError) {
-      console.warn("⚠️ Could not abort write stream", abortError);
-    }
-    throw error;
-  } finally {
-    if (reader) {
-      reader.releaseLock();
-    }
-  }
-};
 
 const sortPrograms = (items: Program[]): Program[] =>
   [...items].sort(
@@ -1505,35 +1451,18 @@ function App(): JSX.Element {
 
       const sdHandle = await window.showDirectoryPicker({ mode: "readwrite" });
       const targetFileHandle = await sdHandle.getFileHandle(COPIED_LED_FILENAME, { create: true });
-      writable = await targetFileHandle.createWritable();
 
       setCopyStatuses((prev) => ({
         ...prev,
         [program.id]: { status: "copying", progress: 0 },
       }));
 
-      const reader = sourceFile.stream().getReader();
-      const totalBytes = Math.max(sourceFile.size, 1);
-      let bytesWritten = 0;
-
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) {
-          break;
-        }
-        if (value) {
-          await writable.write(value);
-          bytesWritten += value.length;
-          const progress = Math.min(100, Math.round((bytesWritten / totalBytes) * 100));
-          setCopyStatuses((prev) => ({
-            ...prev,
-            [program.id]: { status: "copying", progress },
-          }));
-        }
-      }
-
-      await writable.close();
-      writable = null;
+      await writeFileToHandle(targetFileHandle, sourceFile, (ratio) => {
+        setCopyStatuses((prev) => ({
+          ...prev,
+          [program.id]: { status: "copying", progress: Math.round(ratio * 100) },
+        }));
+      });
 
       const metadataFileName = getProgramMetadataFilename(program);
 
@@ -1744,9 +1673,7 @@ function App(): JSX.Element {
             ledSize = sourceFile.size;
             const exportFileName = getExportFileName(program, index);
             const targetFileHandle = await exportDirectory.getFileHandle(exportFileName, { create: true });
-            const writable = await targetFileHandle.createWritable();
-            await writable.write(sourceFile);
-            await writable.close();
+            await writeFileToHandle(targetFileHandle, sourceFile);
             exportedLedFileName = exportFileName;
           } catch (error) {
             console.warn("⚠️ Failed to export LED file", { id: program.id, error });

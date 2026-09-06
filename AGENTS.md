@@ -11,6 +11,22 @@ Keep this document updated whenever an agent is added, modified, or retired.
 
 ---
 
+## Agent skills
+
+### Issue tracker
+
+Issues tracked as GitHub Issues in this repo (github.com/abhibansal60/led-catalog), using the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default five canonical labels used as-is (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context layout (`CONTEXT.md` + `docs/adr/` at repo root, created lazily as needed). See `docs/agents/domain.md`.
+
+---
+
 ## Active Automations
 
 ### GitHub Actions — Cloudflare Pages Deploy
