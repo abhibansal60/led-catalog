@@ -32,6 +32,7 @@ declare interface FileSystemDirectoryHandle extends FileSystemHandle {
   getFileHandle(name: string, options?: FileSystemGetFileOptions): Promise<FileSystemFileHandle>;
   getDirectoryHandle(name: string, options?: FileSystemGetFileOptions): Promise<FileSystemDirectoryHandle>;
   removeEntry(name: string, options?: FileSystemRemoveOptions): Promise<void>;
+  entries(): AsyncIterableIterator<[string, FileSystemHandle]>;
 }
 
 declare interface FileSystemWritableFileStream {

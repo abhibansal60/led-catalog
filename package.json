@@ -8,7 +8,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "esbuild src/lib/writeFileToHandle.ts --format=esm --outfile=.tmp-writeFileToHandle.mjs && esbuild src/lib/ledFile.ts --format=esm --outfile=.tmp-ledFile.mjs && node --test; status=$?; rm -f .tmp-writeFileToHandle.mjs .tmp-ledFile.mjs; exit $status"
+    "test": "esbuild src/lib/writeFileToHandle.ts --format=esm --outfile=.tmp-writeFileToHandle.mjs && esbuild src/lib/ledFile.ts --format=esm --outfile=.tmp-ledFile.mjs && esbuild src/lib/clearDirectoryContents.ts --format=esm --outfile=.tmp-clearDirectoryContents.mjs && node --test; status=$?; rm -f .tmp-writeFileToHandle.mjs .tmp-ledFile.mjs .tmp-clearDirectoryContents.mjs; exit $status"
   },
   "dependencies": {
     "class-variance-authority": "^0.7.0",

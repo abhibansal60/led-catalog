@@ -37,6 +37,7 @@ import { cn } from "@/lib/utils";
 import { APP_VERSION, APP_VERSION_DETAILS } from "@/lib/version";
 import { writeFileToHandle } from "@/lib/writeFileToHandle";
 import { filesMatch } from "@/lib/ledFile";
+import { clearDirectoryContents } from "@/lib/clearDirectoryContents";
 import {
   clearPrograms as clearStoredPrograms,
   deleteProgram as deleteStoredProgram,
@@ -1453,12 +1454,24 @@ function App(): JSX.Element {
       const sourceFile = await sourceFileHandle.getFile();
 
       const sdHandle = await window.showDirectoryPicker({ mode: "readwrite" });
-      const targetFileHandle = await sdHandle.getFileHandle(COPIED_LED_FILENAME, { create: true });
+
+      const confirmedFormat = window.confirm(
+        "This will DELETE everything currently on the SD card before copying the new program. Continue?\n"
+          + "यह SD कार्ड की सभी मौजूदा फाइलें मिटा देगा, फिर नया प्रोग्राम कॉपी होगा। जारी रखें?"
+      );
+      if (!confirmedFormat) {
+        console.log("⚠️ SD card copy cancelled — user declined format");
+        return;
+      }
 
       setCopyStatuses((prev) => ({
         ...prev,
         [program.id]: { status: "copying", progress: 0 },
       }));
+
+      await clearDirectoryContents(sdHandle);
+
+      const targetFileHandle = await sdHandle.getFileHandle(COPIED_LED_FILENAME, { create: true });
 
       await writeFileToHandle(targetFileHandle, sourceFile, (ratio) => {
         setCopyStatuses((prev) => ({
@@ -2387,12 +2400,12 @@ function App(): JSX.Element {
                       ? "Copying…"
                       : isFileMissing
                       ? "Link LED file first"
-                      : "Copy to SD Card";
+                      : "Format & Copy to SD Card";
                     const copySecondaryLabel = isCopying
                       ? "कॉपी जारी…"
                       : isFileMissing
                       ? "पहले LED फाइल जोड़ें"
-                      : "SD कार्ड में कॉपी करें";
+                      : "SD कार्ड फॉर्मेट करके कॉपी करें";
                     const downloadPrimaryLabel = isFileMissing ? "LED file missing" : "Download";
                     const downloadSecondaryLabel = isFileMissing ? "LED फाइल नहीं मिली" : "डाउनलोड";
 
