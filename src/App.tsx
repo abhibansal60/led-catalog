@@ -36,7 +36,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { APP_VERSION, APP_VERSION_DETAILS } from "@/lib/version";
 import { writeFileToHandle } from "@/lib/writeFileToHandle";
-import { filesMatch } from "@/lib/ledFile";
+import { filesMatch, inspectLedFile } from "@/lib/ledFile";
 import { clearDirectoryContents } from "@/lib/clearDirectoryContents";
 import {
   clearPrograms as clearStoredPrograms,
@@ -890,8 +890,9 @@ function App(): JSX.Element {
   }, []);
 
   const handleMetadataFileSelect = useCallback(
-    (tempId: string, event: ChangeEvent<HTMLInputElement>) => {
-      const file = event.target.files?.[0] ?? null;
+    async (tempId: string, event: ChangeEvent<HTMLInputElement>) => {
+      const input = event.target;
+      const file = input.files?.[0] ?? null;
       if (file && !file.name.toLowerCase().endsWith(".led")) {
         setMetadataImportErrors((prev) => ({
           ...prev,
@@ -901,9 +902,30 @@ function App(): JSX.Element {
           ...prev,
           [tempId]: null,
         }));
-        event.target.value = "";
+        input.value = "";
         return;
       }
+
+      if (file) {
+        const header = await inspectLedFile(file);
+        if (!header.ok) {
+          setMetadataImportErrors((prev) => ({
+            ...prev,
+            [tempId]: "This .led file looks corrupted or invalid. यह .led फाइल खराब या अमान्य लग रही है.",
+          }));
+          setMetadataImportSelections((prev) => ({
+            ...prev,
+            [tempId]: null,
+          }));
+          input.value = "";
+          console.warn("❌ LED file failed integrity check", file.name, header.warnings);
+          return;
+        }
+        if (header.warnings.length > 0) {
+          console.warn("⚠️ LED file integrity warnings", file.name, header.warnings);
+        }
+      }
+
       setMetadataImportErrors((prev) => {
         if (!(tempId in prev)) {
           return prev;
@@ -1080,15 +1102,16 @@ function App(): JSX.Element {
     }));
   };
 
-  const handleLedFileChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
+  const handleLedFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.target;
+    const file = input.files?.[0];
     if (!file) {
       return;
     }
     const isLedFile = file.name.toLowerCase().endsWith(".led");
     if (!isLedFile) {
       setFormData((prev) => ({ ...prev, ledFile: null }));
-      event.target.value = "";
+      input.value = "";
       setFeedback({
         type: "error",
         message: "Please select a .led file. केवल .led फाइल चुनें.",
@@ -1096,6 +1119,22 @@ function App(): JSX.Element {
       console.warn("❌ Invalid LED file selected", file.name);
       return;
     }
+
+    const header = await inspectLedFile(file);
+    if (!header.ok) {
+      setFormData((prev) => ({ ...prev, ledFile: null }));
+      input.value = "";
+      setFeedback({
+        type: "error",
+        message: "This .led file looks corrupted or invalid. यह .led फाइल खराब या अमान्य लग रही है.",
+      });
+      console.warn("❌ LED file failed integrity check", file.name, header.warnings);
+      return;
+    }
+    if (header.warnings.length > 0) {
+      console.warn("⚠️ LED file integrity warnings", file.name, header.warnings);
+    }
+
     setFormData((prev) => ({
       ...prev,
       ledFile: file,
