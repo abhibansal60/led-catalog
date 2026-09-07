@@ -25,6 +25,7 @@ import {
   Loader2,
   FileJson,
   FolderDown,
+  ShieldCheck,
 } from "lucide-react";
 
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -35,6 +36,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { APP_VERSION, APP_VERSION_DETAILS } from "@/lib/version";
 import { writeFileToHandle } from "@/lib/writeFileToHandle";
+import { filesMatch } from "@/lib/ledFile";
 import {
   clearPrograms as clearStoredPrograms,
   deleteProgram as deleteStoredProgram,
@@ -195,8 +197,9 @@ const normalizeExportedProgram = (
 };
 
 type CopyStatus = {
-  status: "copying" | "success" | "error";
+  status: "copying" | "verifying" | "success" | "error";
   progress: number;
+  message?: string;
 };
 
 const formatFileSize = (bytes?: number | null): string => {
@@ -1464,6 +1467,44 @@ function App(): JSX.Element {
         }));
       });
 
+      setCopyStatuses((prev) => ({
+        ...prev,
+        [program.id]: { status: "verifying", progress: 100 },
+      }));
+
+      const copiedFile = await targetFileHandle.getFile();
+      const matches = await filesMatch(sourceFile, copiedFile);
+      if (!matches) {
+        console.error("❌ SD card copy verification failed", {
+          id: program.id,
+          sourceBytes: sourceFile.size,
+          copiedBytes: copiedFile.size,
+        });
+        setCopyStatuses((prev) => ({
+          ...prev,
+          [program.id]: {
+            status: "error",
+            progress: 100,
+            message: `Copied but didn't verify (source ${sourceFile.size} bytes, SD card ${copiedFile.size} bytes). SD card may be failing — try a different card.`,
+          },
+        }));
+        window.alert(
+          "File copied but does not match the original — the SD card may be corrupted or failing. Try again or use a different card.\n"
+            + "फाइल कॉपी हुई पर मूल फाइल से मेल नहीं खाती — SD कार्ड खराब हो सकता है। दोबारा कोशिश करें या दूसरा कार्ड इस्तेमाल करें।"
+        );
+        window.setTimeout(() => {
+          setCopyStatuses((prev) => {
+            const entry = prev[program.id];
+            if (!entry || entry.status === "copying" || entry.status === "verifying") {
+              return prev;
+            }
+            const { [program.id]: _removed, ...rest } = prev;
+            return rest;
+          });
+        }, 8000);
+        return;
+      }
+
       const metadataFileName = getProgramMetadataFilename(program);
 
       try {
@@ -1508,8 +1549,8 @@ function App(): JSX.Element {
         [program.id]: { status: "success", progress: 100 },
       }));
       window.alert(
-        `Copied to SD card as ${COPIED_LED_FILENAME} with details in ${metadataFileName}.\n`
-          + `SD कार्ड में ${COPIED_LED_FILENAME} कॉपी हुआ और नोट ${metadataFileName} में सेव हुआ।`
+        `Copied and verified as ${COPIED_LED_FILENAME} with details in ${metadataFileName}.\n`
+          + `SD कार्ड में ${COPIED_LED_FILENAME} कॉपी हुआ और जांचा गया, नोट ${metadataFileName} में सेव हुआ।`
       );
       console.log("💾 Program copied to SD card", {
         id: program.id,
@@ -1559,6 +1600,65 @@ function App(): JSX.Element {
           return rest;
         });
       }, 5000);
+    }
+  };
+
+  const handleVerifySdCard = async (program: Program) => {
+    if (!("showDirectoryPicker" in window)) {
+      window.alert("Browser does not support direct SD card access.\nकृपया Chrome या Edge का इस्तेमाल करें।");
+      return;
+    }
+    if (program.isFileMissing) {
+      window.alert(
+        "LED file not linked yet. Edit the program to attach a LED file first.\nLED फाइल अभी लिंक नहीं है। पहले एडिट करके जोड़ें।"
+      );
+      return;
+    }
+
+    try {
+      const sourceDirectory = await ensureDirectoryAccess();
+      if (!sourceDirectory) {
+        return;
+      }
+      const sourceFileHandle = await sourceDirectory.getFileHandle(program.storedFileName, { create: false });
+      const sourceFile = await sourceFileHandle.getFile();
+
+      const sdHandle = await window.showDirectoryPicker({ mode: "read" });
+      let sdFileHandle: FileSystemFileHandle;
+      try {
+        sdFileHandle = await sdHandle.getFileHandle(COPIED_LED_FILENAME, { create: false });
+      } catch (error) {
+        window.alert(
+          `No ${COPIED_LED_FILENAME} found on that SD card.\nउस SD कार्ड में ${COPIED_LED_FILENAME} नहीं मिली।`
+        );
+        return;
+      }
+      const sdFile = await sdFileHandle.getFile();
+
+      const matches = await filesMatch(sourceFile, sdFile);
+      if (matches) {
+        window.alert(
+          `✅ SD card matches the catalog copy exactly (${formatFileSize(sdFile.size)}). Safe to install.\n`
+            + `SD कार्ड बिल्कुल कैटलॉग जैसा है। लगाना सुरक्षित है।`
+        );
+      } else {
+        window.alert(
+          `❌ SD card file does NOT match (catalog ${formatFileSize(sourceFile.size)}, SD card ${formatFileSize(sdFile.size)}). Re-copy before installing.\n`
+            + `SD कार्ड की फाइल मेल नहीं खाती। दोबारा कॉपी करें, फिर लगाएं।`
+        );
+      }
+      console.log("🔍 SD card verified", {
+        id: program.id,
+        matches,
+        sourceBytes: sourceFile.size,
+        sdBytes: sdFile.size,
+      });
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        return;
+      }
+      console.error("❌ SD card verification failed", error);
+      window.alert("Could not verify SD card. जांच नहीं हो पाई।");
     }
   };
 
@@ -2386,16 +2486,23 @@ function App(): JSX.Element {
                                   <p className="text-sm font-medium text-foreground">
                                     {copyStatus.status === "copying" ? (
                                       `Copying… ${copyStatus.progress}%`
+                                    ) : copyStatus.status === "verifying" ? (
+                                      <BilingualText
+                                        primary="Verifying copy…"
+                                        secondary="जांच जारी…"
+                                        className="items-start text-left"
+                                        secondaryClassName="text-xs text-muted-foreground"
+                                      />
                                     ) : copyStatus.status === "success" ? (
                                       <BilingualText
-                                        primary="Copied successfully!"
-                                        secondary="कॉपी हो गया।"
+                                        primary="Copied and verified!"
+                                        secondary="कॉपी हो गया और जांचा गया।"
                                         className="items-start text-left"
                                         secondaryClassName="text-xs text-muted-foreground"
                                       />
                                     ) : (
                                       <BilingualText
-                                        primary="Copy failed."
+                                        primary={copyStatus.message ?? "Copy failed."}
                                         secondary="कॉपी नहीं हो पाया।"
                                         className="items-start text-left"
                                         secondaryClassName="text-xs text-muted-foreground"
@@ -2422,6 +2529,24 @@ function App(): JSX.Element {
                                   secondaryClassName="text-xs text-muted-foreground"
                                 />
                               </Button>
+                              {isFileSystemSupported ? (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  onClick={() => handleVerifySdCard(program)}
+                                  className="w-full sm:flex-1"
+                                  disabled={isFileMissing}
+                                >
+                                  <ShieldCheck className="h-5 w-5" aria-hidden="true" />
+                                  <BilingualText
+                                    primary="Verify SD Card"
+                                    secondary="SD कार्ड जांचें"
+                                    align="start"
+                                    className="items-start text-left"
+                                    secondaryClassName="text-xs text-muted-foreground"
+                                  />
+                                </Button>
+                              ) : null}
                               <Button
                                 type="button"
                                 variant="outline"
@@ -2556,6 +2681,24 @@ function App(): JSX.Element {
                                 secondaryClassName="text-xs text-muted-foreground"
                               />
                             </Button>
+                            {isFileSystemSupported ? (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => handleVerifySdCard(program)}
+                                disabled={isFileMissing}
+                                className="w-full sm:flex-1"
+                              >
+                                <ShieldCheck className="h-5 w-5" aria-hidden="true" />
+                                <BilingualText
+                                  primary="Verify SD Card"
+                                  secondary="SD कार्ड जांचें"
+                                  align="start"
+                                  className="items-start text-left"
+                                  secondaryClassName="text-xs text-muted-foreground"
+                                />
+                              </Button>
+                            ) : null}
                             <Button
                               type="button"
                               variant="outline"

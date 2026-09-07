@@ -3,7 +3,7 @@ node_modules/
 
 # Build output
 dist/
-.tmp-writeFileToHandle.mjs
+.tmp-*.mjs
 
 # Logs
 npm-debug.log*
@@ -27,6 +27,7 @@ pnpm-debug.log*
 
 # Coverage / testing artefacts (none expected but safe)
 coverage/
+test-files/
 
 # Generated lockfiles (keep the one you actually use)
 package-lock.json
