@@ -23,7 +23,7 @@ Default five canonical labels used as-is (`needs-triage`, `needs-info`, `ready-f
 
 ### Domain docs
 
-Single-context layout (`CONTEXT.md` + `docs/adr/` at repo root, created lazily as needed). See `docs/agents/domain.md`.
+Single-context layout (`GLOSSARY.md` + `docs/adr/` at repo root, created lazily as needed). See `docs/agents/domain.md`.
 
 ---
 
