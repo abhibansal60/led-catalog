@@ -40,12 +40,9 @@ jobs:
           VITE_COMMIT_REF: ${{ github.sha }}
 
       - name: Publish to Cloudflare Pages
-        uses: cloudflare/pages-action@v1
+        uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          projectName: led-catalog
-          directory: dist
-          branch: ${{ github.head_ref || github.ref_name }}
           wranglerVersion: "4.45.1"
-
+          command: pages deploy dist --project-name=led-catalog --branch=${{ github.head_ref || github.ref_name }}
