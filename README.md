@@ -6,7 +6,7 @@ Modern LED-program catalog for the Bansal Lights team. The app stores `.led` con
 
 ## What You Get
 - 📱 **Mobile-first interface** with large bilingual (English | हिंदी) labels and emoji cues.
-- 💾 **Offline catalog**: LED programs live in `localStorage`; nothing is sent to a server.
+- 💾 **Offline catalog**: LED programs live in IndexedDB and a folder you pick; nothing is sent to a server.
 - 📥 **One-tap download** that always exports `00_program.led` for T-1000/T-8000 controllers.
 - 📷 **Optional photo & notes** to identify how a program looks on-site.
 - 🔐 **Reset switch** (hidden button) to wipe stored data if a device is being handed over.
@@ -17,12 +17,12 @@ Modern LED-program catalog for the Bansal Lights team. The app stores `.led` con
 | ---- | ------ | ----- |
 | UI | React 18 + TypeScript | SPA bootstrapped with Vite |
 | Styling | Tailwind CSS + shadcn-inspired primitives | Custom component variants live in `src/components/ui` |
-| State | React hooks + browser `localStorage` | No backend services required |
+| State | React hooks + IndexedDB + File System Access API | `/api/sync` Pages Function stores the last export's metadata in Workers KV |
 | Tooling | Vite 5 | Handles dev server, bundling, and TypeScript |
 | Hosting | Cloudflare Pages (free tier) | Automated by GitHub Actions workflow `deploy.yaml` |
 
 ## Local Development
-1. Install Node.js 18 (or newer LTS) and npm.
+1. Install Node.js 20 (what CI uses) or newer, and npm.
 2. Clone the repo and install dependencies:
    ```bash
    npm install
@@ -37,7 +37,7 @@ Modern LED-program catalog for the Bansal Lights team. The app stores `.led` con
    npm run build
    ```
 
-> Tip: Run `npm run build` before pushing to catch type or bundling errors locally.
+> Tip: Run `npm test` and `npm run build` before pushing to catch logic and bundling errors locally (the build does not typecheck).
 
 ## Deployment
 ### Production
@@ -57,12 +57,12 @@ Workflow file: `.github/workflows/deploy.yaml`
    - Checks out the repo.
    - Installs dependencies with `npm ci`.
    - Builds the production bundle.
-   - Publishes `dist/` using `cloudflare/pages-action@v1` with Wrangler 4.x.
+   - Publishes `dist/` with `cloudflare/wrangler-action@v4` (`wrangler pages deploy`).
 4. Preview deploys are generated automatically for pull requests via Cloudflare Pages branch deploys.
 5. Monitor the Actions tab for the “Deploy to Cloudflare Pages” job. A green run equals a successful release.
 
 ## Testing & Quality
-- No automated tests today; rely on manual smoke testing.
+- `npm test` runs unit tests for the `src/lib` helpers (LED header check, file writes, SD card wipe); cover the UI with manual smoke testing.
 - Manual QA checklist:
   - [ ] Add a program with all fields (file, photo, notes).
   - [ ] Add a program with only required fields.
