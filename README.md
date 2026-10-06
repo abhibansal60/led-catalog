@@ -122,7 +122,7 @@ These friendly steps walk through the common job: adding a fresh LED program, co
 - Data lives only in the user’s browser. Clearing cache or switching devices requires manual export/import.
 - Rotate the Cloudflare API token on a regular cadence and update the GitHub secret.
 - Monitor Cloudflare Pages analytics (bandwidth/requests) monthly to ensure the project stays within the free tier.
-- Update this README and `AGENTS.md` whenever automation or operating practices change.
+- Update this README, `AGENTS.md` and `docs/agents/deploy.md` whenever automation or operating practices change.
 
 ## Contingency: Rebuilding the Cloudflare Pages Project
 If the Cloudflare Pages project is deleted or the token expires, follow these steps to restore automated deploys:
