@@ -46,6 +46,10 @@ export class FakeFs {
     return this.call<void>("mkdir", path);
   }
 
+  remove(path: string) {
+    return this.call<void>("remove", path);
+  }
+
   list(path: string) {
     return this.call<string[]>("list", path);
   }
@@ -60,6 +64,13 @@ export class FakeFs {
 
   failWrites(path: string, errorName: string) {
     return this.call<void>("failWrites", path, errorName);
+  }
+
+  /** Resolves once every queued picker response has been consumed. */
+  async waitForPickers() {
+    await expect
+      .poll(async () => (await this.state()).pending, { message: "queued picker response never consumed" })
+      .toEqual({ directory: 0, open: 0, save: 0 });
   }
 
   state() {

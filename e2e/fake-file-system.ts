@@ -232,6 +232,10 @@ export function installFakeFileSystemAccess(): void {
     mkdir(path: string) {
       resolveDirectory(path, true);
     },
+    remove(path: string) {
+      const [parent, name] = resolveParent(path, false);
+      parent.children.delete(name);
+    },
     list(path: string): string[] {
       return [...resolveDirectory(path, false).children.keys()].sort();
     },
