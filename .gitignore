@@ -40,3 +40,6 @@ cache/
 tmp/
 
 *.led
+# Playwright
+test-results/
+playwright-report/
