@@ -73,3 +73,13 @@ test("a connected folder whose permission is revoked asks for a folder again", a
   expect(await fs.readFile(`/catalog-2/${stored.storedFileName}`)).toEqual(program.bytes);
   expect(await readStoredDirectoryHandle(page)).toEqual({ kind: "directory", name: "catalog-2" });
 });
+
+test("a write failure removes the partial LED file and keeps the catalog unchanged", async ({ page, fs }) => {
+  await connectCatalogFolder(page, fs, "/catalog");
+  await fs.failWrites("/catalog", "QuotaExceededError");
+  await submitProgram(page, program);
+
+  await expect(feedback(page)).toContainText("Could not save program");
+  expect(await readStoredPrograms(page)).toEqual([]);
+  expect(await fs.list("/catalog")).toEqual([]);
+});
