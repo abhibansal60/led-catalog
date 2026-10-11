@@ -2,7 +2,9 @@
 
 ## Tests and checks
 
-- Put logic worth testing in a `src/lib` module and test it with `node:test` plus hand-rolled fakes for File System Access handles; `App.tsx` has no tests.
+- Put logic worth testing in a `src/lib` module and test it with `node:test` plus hand-rolled fakes for File System Access handles.
+- `App.tsx` flows are covered end to end by Playwright specs in `e2e/` (`npm run test:e2e`, against the Vite dev server). `e2e/fake-file-system.ts` replaces the three pickers with an in-memory file system; a test queues each picker's response with `fs.pick` / `fs.pickFails`, and an unqueued or unconsumed picker fails the test. The fake lives in the page, so a reload wipes it.
+- CI (`.github/workflows/test.yaml`) runs both suites on every PR and push to `main`.
 - `npm test` esbuild-bundles each tested `src/lib` module into a `.tmp-*.mjs` file that `test/*.test.mjs` imports; a test for a new module needs its bundle and cleanup added to the `test` script in `package.json`. esbuild arrives through vite, not as a direct dependency.
 - `npm run build` is `vite build`, which transpiles without typechecking, and `npx tsc --noEmit` currently stops at a tsconfig error (TS5110). Type errors therefore surface only in the editor.
 
