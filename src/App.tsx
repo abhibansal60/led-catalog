@@ -1621,6 +1621,10 @@ function App(): JSX.Element {
         });
       }, 4000);
     } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        console.log("⚠️ SD card copy cancelled before selecting card");
+        return;
+      }
       console.error("❌ Copy to SD card failed", error);
       if (writable) {
         try {
