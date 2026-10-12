@@ -101,7 +101,7 @@ test("cancelling the full export folder picker writes and syncs nothing", async 
 
   await fs.waitForPickers();
   await expect(page.getByRole("button", { name: /Export backup/ })).toBeEnabled();
-  await expect(feedback(page)).toContainText("Program saved!");
+  await expect(feedback(page).filter({ hasNotText: "Program saved!" })).toHaveCount(0);
   expect(sync.posts).toEqual([]);
 });
 
@@ -140,6 +140,6 @@ test("cancelling the quick JSON save dialog writes and syncs nothing", async ({ 
 
   await fs.waitForPickers();
   await expect(page.getByRole("button", { name: /Export backup/ })).toBeEnabled();
-  await expect(feedback(page)).toContainText("Program saved!");
+  await expect(feedback(page).filter({ hasNotText: "Program saved!" })).toHaveCount(0);
   expect(sync.posts).toEqual([]);
 });

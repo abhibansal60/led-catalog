@@ -136,7 +136,8 @@ test("cancelling the full import folder picker imports nothing", async ({ page, 
 
   await fs.waitForPickers();
   await expect(page.getByRole("button", { name: /Import backup/ })).toBeEnabled();
-  await expect(feedback(page)).toHaveCount(0);
+  // "Folder ready" from connecting can still be on screen; anything else is an error.
+  await expect(feedback(page).filter({ hasNotText: "Folder ready" })).toHaveCount(0);
   expect(await readStoredPrograms(page)).toEqual([]);
 });
 
