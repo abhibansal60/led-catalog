@@ -56,6 +56,15 @@ test("cancelling the SD card picker shows no error", async ({ page, fs, dialogs 
   expect(await fs.list("/sd")).toEqual(["old", "stale.led"]);
 });
 
+test("a blocked SD card folder reports the copy as failed", async ({ page, fs, dialogs }) => {
+  await seedCardAndCatalog(page, fs);
+  await fs.pickFails("directory", "NotAllowedError");
+  await copyButton(page).click();
+
+  await expect.poll(() => dialogs.messages).toEqual([expect.stringContaining("Could not copy to SD card")]);
+  expect(await fs.list("/sd")).toEqual(["old", "stale.led"]);
+});
+
 test("a write failure on the SD card reports the copy as failed", async ({ page, fs, dialogs }) => {
   await seedCardAndCatalog(page, fs);
   await fs.failWrites("/sd", "NoModificationAllowedError");

@@ -141,6 +141,15 @@ test("cancelling the full import folder picker imports nothing", async ({ page, 
   expect(await readStoredPrograms(page)).toEqual([]);
 });
 
+test("a blocked full import folder shows an error and imports nothing", async ({ page, fs }) => {
+  await connectCatalogFolder(page, fs, "/catalog");
+  await fs.pickFails("directory", "NotAllowedError");
+  await startImport(page, "Full import");
+
+  await expect(feedback(page)).toContainText("Import failed");
+  expect(await readStoredPrograms(page)).toEqual([]);
+});
+
 test("a write failure during full import leaves no partial file and marks the program missing", async ({
   page,
   fs,

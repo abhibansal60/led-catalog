@@ -105,6 +105,15 @@ test("cancelling the full export folder picker writes and syncs nothing", async 
   expect(sync.posts).toEqual([]);
 });
 
+test("a blocked full export folder shows an error and syncs nothing", async ({ page, fs, sync }) => {
+  await seedCatalog(page, fs);
+  await fs.pickFails("directory", "NotAllowedError");
+  await exportCatalog(page, "Full export");
+
+  await expect(feedback(page)).toContainText("Export failed");
+  expect(sync.posts).toEqual([]);
+});
+
 test("quick JSON backup saves program metadata and posts the same payload to /api/sync", async ({
   page,
   fs,
