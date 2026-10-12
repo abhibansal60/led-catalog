@@ -4,6 +4,20 @@ Modern LED-program catalog for the Bansal Lights team. The app stores `.led` con
 
 ![Catalog walkthrough](docs/screenshot.png)
 
+## Start here: paste this to your agent
+
+```text
+Set up the Bansal Lights LED Catalog (https://github.com/abhibansal60/led-catalog) for me.
+1. Check my Node.js and npm versions with read-only commands. It needs Node 20 or newer.
+2. Clone the repo (or run `git pull` if I already have it), then run `npm ci`.
+3. Read AGENTS.md and the docs it points to before you change anything.
+4. Run `npm test` and `npm run build`, and tell me what passed.
+5. Start `npm run dev` and give me the URL. The folder and SD card features need a
+   Chromium browser (Chrome or Edge), since they use the File System Access API.
+Ask me before you change any config, secrets or Cloudflare settings. Never push to
+main: a push to main deploys straight to production, so work on a branch and open a PR.
+```
+
 ## What You Get
 - 📱 **Mobile-first interface** with large bilingual (English | हिंदी) labels and emoji cues.
 - 💾 **Offline catalog**: LED programs live in IndexedDB and a folder you pick; nothing is sent to a server.
