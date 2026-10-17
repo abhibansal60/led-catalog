@@ -1250,9 +1250,9 @@ function App(): JSX.Element {
 
           updatedStoredFileName = `${programToUpdate.id}-${sanitizeFileName(formData.ledFile.name)}`;
           const fileHandle = await targetDirectory.getFileHandle(updatedStoredFileName, { create: true });
-          await writeFileToHandle(fileHandle, formData.ledFile, (progress) => setSaveProgress(progress));
           createdFileName = updatedStoredFileName;
           createdFileWasReplacement = updatedStoredFileName === programToUpdate.storedFileName;
+          await writeFileToHandle(fileHandle, formData.ledFile, (progress) => setSaveProgress(progress));
 
           if (updatedStoredFileName !== programToUpdate.storedFileName) {
             try {
@@ -1309,8 +1309,8 @@ function App(): JSX.Element {
         const id = `${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
         const storedFileName = `${id}-${sanitizeFileName(formData.ledFile!.name)}`;
         const fileHandle = await targetDirectory.getFileHandle(storedFileName, { create: true });
-        await writeFileToHandle(fileHandle, formData.ledFile!, (progress) => setSaveProgress(progress));
         createdFileName = storedFileName;
+        await writeFileToHandle(fileHandle, formData.ledFile!, (progress) => setSaveProgress(progress));
 
         const photoDataUrl = formData.photoFile ? await readFileAsDataUrl(formData.photoFile) : null;
 
@@ -1621,6 +1621,10 @@ function App(): JSX.Element {
         });
       }, 4000);
     } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        console.log("⚠️ SD card copy cancelled before selecting card");
+        return;
+      }
       console.error("❌ Copy to SD card failed", error);
       if (writable) {
         try {
