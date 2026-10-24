@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json",
     "preview": "vite preview",
     "test": "esbuild src/lib/writeFileToHandle.ts --format=esm --outfile=.tmp-writeFileToHandle.mjs && esbuild src/lib/ledFile.ts --format=esm --outfile=.tmp-ledFile.mjs && esbuild src/lib/clearDirectoryContents.ts --format=esm --outfile=.tmp-clearDirectoryContents.mjs && node --test; status=$?; rm -f .tmp-writeFileToHandle.mjs .tmp-ledFile.mjs .tmp-clearDirectoryContents.mjs; exit $status",
     "test:e2e": "playwright test"

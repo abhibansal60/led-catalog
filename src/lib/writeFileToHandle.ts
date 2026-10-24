@@ -13,7 +13,7 @@ export const writeFileToHandle = async (
     onProgress(Number.isFinite(ratio) ? ratio : 0);
   };
 
-  let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+  let reader: ReadableStreamDefaultReader<Uint8Array<ArrayBuffer>> | null = null;
   let bytesWritten = 0;
 
   try {

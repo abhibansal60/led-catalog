@@ -43,3 +43,4 @@ tmp/
 # Playwright
 test-results/
 playwright-report/
+*.tsbuildinfo
