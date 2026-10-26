@@ -50,7 +50,7 @@ declare interface Window {
 
 declare interface FilePickerAcceptType {
   description?: string;
-  accept: Record<string, string[]>;
+  accept: Record<string, string | string[]>;
 }
 
 declare interface OpenFilePickerOptions {

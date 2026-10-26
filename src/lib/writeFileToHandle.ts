@@ -27,8 +27,7 @@ export const writeFileToHandle = async (
         }
         if (value) {
           await writable.write(value);
-          const chunkBytes = value.length ?? value.byteLength ?? 0;
-          bytesWritten += chunkBytes;
+          bytesWritten += value.byteLength;
           reportProgress(bytesWritten);
         }
       }
