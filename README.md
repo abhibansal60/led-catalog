@@ -12,8 +12,8 @@ Set up the Bansal Lights LED Catalog (https://github.com/abhibansal60/led-catalo
 2. Clone the repo (or run `git pull` if I already have it), then run `npm ci`.
 3. Read AGENTS.md and the docs it points to before you change anything.
 4. Run `npm test` and `npm run build`, and tell me what passed.
-5. Start `npm run dev` and give me the URL. The folder and SD card features need a
-   Chromium browser (Chrome or Edge), since they use the File System Access API.
+5. Start `npm run dev` and give me the URL. Open it in desktop Chrome or Edge: adding,
+   downloading and copying programs all need the File System Access folder picker.
 Ask me before you change any config, secrets or Cloudflare settings. Never push to
 main: a push to main deploys straight to production, so work on a branch and open a PR.
 ```
@@ -21,9 +21,10 @@ main: a push to main deploys straight to production, so work on a branch and ope
 ## What You Get
 - 📱 **Mobile-first interface** with large bilingual (English | हिंदी) labels and emoji cues.
 - 💾 **Offline catalog**: program records live in IndexedDB and the `.led` files in a folder you pick. Each export also sends the program list (photos and notes included) to `/api/sync`; see [Operational Notes](#operational-notes).
-- 💳 **Format & Copy to SD Card** (Chrome or Edge): wipes the card, writes `00_program.led`, and checks the copy byte for byte. **Verify SD Card** re-checks a card later.
-- 📥 **One-tap download** that always saves `00_program.led` for T-1000/T-8000 controllers, for browsers without folder access.
-- 📦 **Export and import**: a full backup (folder with the `.led` files plus JSON) or a JSON-only backup; import either back, or metadata only.
+- 💳 **Format & Copy to SD Card**: wipes the card, writes `00_program.led`, and checks the copy byte for byte. **Verify SD Card** re-checks a card later.
+- 📥 **One-tap download** that always saves `00_program.led` for T-1000/T-8000 controllers, to copy to a card by hand.
+- 🌐 **Browser support**: everything that touches `.led` files (add, download, SD card, full export and import) needs the File System Access folder picker, so use desktop Chrome or Edge. Without it the app shows "Browser unsupported".
+- 📦 **Export and import**: a full backup (folder with the `.led` files plus `catalog.json`) or a JSON-only backup. Full import reads a full-backup folder; metadata import reads a JSON file and restores records without `.led` files.
 - 📷 **Optional photo & notes** to identify how a program looks on-site.
 - 🔐 **Reset switch** (hidden button) to wipe stored data if a device is being handed over.
 - 🚀 **CI-backed deployment** to Cloudflare Pages on every push/merge to `main`.
@@ -39,7 +40,7 @@ main: a push to main deploys straight to production, so work on a branch and ope
 | Hosting | Cloudflare Pages (free tier) | Deployed by GitHub Actions workflow `deploy.yaml` with `wrangler pages deploy` |
 
 ## Local Development
-1. Install Node.js 20 (what CI uses) or newer, and npm.
+1. Install Node.js 24 (what CI uses), and npm.
 2. Clone the repo and install the locked dependencies:
    ```bash
    git clone https://github.com/abhibansal60/led-catalog.git
@@ -50,7 +51,7 @@ main: a push to main deploys straight to production, so work on a branch and ope
    ```bash
    npm run dev
    ```
-4. Open the printed URL (default `http://localhost:5173`) in Chrome or Edge; the folder and SD card features use the File System Access API. Changes hot-reload automatically.
+4. Open the printed URL (default `http://localhost:5173`) in desktop Chrome or Edge; the app's file features use the File System Access API. Changes hot-reload automatically.
 5. Generate a production bundle in `dist/` and serve it locally:
    ```bash
    npm run build
@@ -65,9 +66,7 @@ main: a push to main deploys straight to production, so work on a branch and ope
 | `npm run build` | Production bundle in `dist/` (no typecheck) |
 | `npm run preview` | Serves `dist/` locally |
 | `npm test` | Unit tests for the `src/lib` helpers |
-| `npm run test:e2e` | Playwright end-to-end specs in `e2e/` (run `npx playwright install chromium` once first) |
-
-> Tip: Run `npm test` and `npm run build` before pushing to catch logic and bundling errors locally.
+| `npm run test:e2e` | Playwright end-to-end specs in `e2e/` (run `npx playwright install --with-deps chromium` once first, as CI does) |
 
 ## Deployment
 ### Production
@@ -84,9 +83,9 @@ Workflow file: `.github/workflows/deploy.yaml`
 2. In the GitHub repository, add secrets:
    - `CLOUDFLARE_API_TOKEN`: the token created above.
    - `CLOUDFLARE_ACCOUNT_ID`: the account ID for the Cloudflare tenant hosting the project.
-3. Merge to `main`. A push to `main` deploys straight to production, so work on a branch and open a PR. The workflow:
-   - Checks out the repo and installs dependencies with `npm ci` (Node 20).
-   - Stamps the footer version: `VITE_APP_VERSION` (`ddmmyy-01`, the UTC build date), the build time and the commit.
+3. Merge a PR to `main`. The workflow:
+   - Checks out the repo and installs dependencies with `npm ci` (Node 24).
+   - Stamps the footer version: `VITE_APP_VERSION` (`ddmmyy-01`, the UTC build date). `vite.config.ts` adds the build time and the commit (`GITHUB_SHA`); the workflow's own `VITE_BUILD_TIMESTAMP` is overridden by it.
    - Builds the production bundle.
    - Publishes `dist/` with `cloudflare/wrangler-action@v4` (`wrangler pages deploy dist --project-name=led-catalog --branch=<branch>`).
 4. Every pull request also runs the workflow and publishes a preview deploy under the PR's branch name. PRs from forks get no secrets, so their deploy step fails.
@@ -121,9 +120,11 @@ These friendly steps walk through the common job: adding a fresh LED program, co
 6. **Save.** Tap “Save Program”. You will see the new card appear on the home screen.
 
 ### B. Copy the program to an SD card
-**On Chrome or Edge:** tap **“Format & Copy to SD Card”** on the program card and pick the SD card. The app first asks before it deletes everything on the card, then copies `00_program.led` and checks it. When it says the copy matches, go to step C4.
+Use Chrome or Edge on a computer; other browsers show “Browser unsupported”.
 
-**On other browsers:**
+**Straight to the card:** tap **“Format & Copy to SD Card”** on the program card and pick the SD card. The app first asks before it deletes everything on the card, then copies `00_program.led` and checks it. When it says the copy matches, go to step C4.
+
+**Or download and copy by hand:**
 1. **Insert the SD card** from the T-series controller into your phone (with an adapter) or a computer.
 2. **Tap the “Download” button** on the new program card. The app always names the file `00_program.led`, which the controller expects.
 3. **Choose the SD card as the destination.** On a phone, select “Files” → SD card. On a computer, save to the drive letter that matches the SD card.
@@ -172,7 +173,7 @@ These friendly steps walk through the common job: adding a fresh LED program, co
 
 ## Operational Notes
 - Program records live in the browser (IndexedDB) and `.led` files in the picked folder. Clearing browser data or switching devices requires export/import.
-- Every export POSTs the program list, photos and notes included, to `/api/sync`, which keeps only the latest one in Workers KV under `latest-catalog`. A GET on `/api/sync` returns it without sign-in, and the POST has no check either, so treat that copy as public.
+- Every export POSTs the program list, photos and notes included, to `/api/sync`, which keeps only the latest one in Workers KV under `latest-catalog`. A GET on `/api/sync` returns it without sign-in, and the POST has no check either, so treat that copy as public (decision pending in issue #34).
 - Rotate the Cloudflare API token on a regular cadence and update the GitHub secret.
 - Monitor Cloudflare Pages analytics (bandwidth/requests) monthly to ensure the project stays within the free tier.
 - Update this README, `AGENTS.md` and `docs/agents/deploy.md` whenever automation or operating practices change.
@@ -185,7 +186,7 @@ If the Cloudflare Pages project is deleted or the token expires, follow these st
    - Archive the output for safekeeping (attach to a GitHub Release if desired).
 2. **Create a fresh Cloudflare Pages project**
    - GitHub Actions uploads the build itself, so create a Direct Upload project rather than a Git-connected one: `npx wrangler pages project create led-catalog --production-branch=main`.
-   - If the KV namespace is gone too, create one (`npx wrangler kv namespace create CATALOG_DB`) and put its id in `wrangler.toml`.
+   - If the KV namespace is gone too, create both (`npx wrangler kv namespace create CATALOG_DB` and the same with `--preview`) and put their ids in `wrangler.toml` (`id` and `preview_id`).
 3. **Provision a new API token**
    - Generate a token with **Cloudflare Pages: Edit** and **Workers KV Storage: Read/Write** permissions.
    - Update the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets in GitHub.
@@ -193,7 +194,7 @@ If the Cloudflare Pages project is deleted or the token expires, follow these st
    - Push an empty commit or retrigger the latest workflow run from the Actions tab.
    - Confirm the deployment succeeds and the production domain serves the latest build.
 
-> Tip: To deploy by hand, build locally and run `npx wrangler pages deploy dist --project-name=led-catalog`. Without `--branch`, it publishes your current git branch, so run it from `main` for production.
+> Tip: To deploy by hand, build with the version stamp (`VITE_APP_VERSION=$(date -u +%d%m%y)-01 npm run build`; without it the footer shows the stale `appVersion` from `package.json`) and run `npx wrangler pages deploy dist --project-name=led-catalog`. Without `--branch`, it publishes your current git branch, so run it from `main` for production.
 
 ## License
 MIT – tailor it freely for the Bansal Lights team.
