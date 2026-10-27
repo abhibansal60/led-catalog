@@ -29,8 +29,7 @@ pnpm-debug.log*
 coverage/
 test-files/
 
-# Generated lockfiles (keep the one you actually use)
-package-lock.json
+# Other package managers' lockfiles (npm's package-lock.json is committed; CI runs npm ci)
 yarn.lock
 pnpm-lock.yaml
 
