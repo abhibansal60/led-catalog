@@ -44,6 +44,23 @@ declare type FileSystemWriteChunkType = BufferSource | Blob | string | File;
 
 declare interface Window {
   showDirectoryPicker(options?: DirectoryPickerOptions): Promise<FileSystemDirectoryHandle>;
+  showOpenFilePicker(options?: OpenFilePickerOptions): Promise<FileSystemFileHandle[]>;
+  showSaveFilePicker(options?: SaveFilePickerOptions): Promise<FileSystemFileHandle>;
+}
+
+declare interface FilePickerAcceptType {
+  description?: string;
+  accept: Record<string, string | string[]>;
+}
+
+declare interface OpenFilePickerOptions {
+  multiple?: boolean;
+  types?: FilePickerAcceptType[];
+}
+
+declare interface SaveFilePickerOptions {
+  suggestedName?: string;
+  types?: FilePickerAcceptType[];
 }
 
 declare interface DirectoryPickerOptions {

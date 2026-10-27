@@ -13,7 +13,7 @@ export const writeFileToHandle = async (
     onProgress(Number.isFinite(ratio) ? ratio : 0);
   };
 
-  let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+  let reader: ReadableStreamDefaultReader<Uint8Array<ArrayBuffer>> | null = null;
   let bytesWritten = 0;
 
   try {
@@ -27,8 +27,7 @@ export const writeFileToHandle = async (
         }
         if (value) {
           await writable.write(value);
-          const chunkBytes = value.length ?? value.byteLength ?? 0;
-          bytesWritten += chunkBytes;
+          bytesWritten += value.byteLength;
           reportProgress(bytesWritten);
         }
       }
