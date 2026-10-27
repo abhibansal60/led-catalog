@@ -257,7 +257,7 @@ export function useExportFlow(s: Deps) {
         anchor.download = suggestedName;
         anchor.rel = "noopener";
         anchor.click();
-        window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
       }
 
       const syncOutcome = await syncCatalogMetadata(metadata, exportedPrograms);
