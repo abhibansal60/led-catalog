@@ -142,7 +142,7 @@ export function useProgramActions(s: Deps) {
 
   const handleCopyToSdCard = async (program: Program) => {
     if (!("showDirectoryPicker" in window)) {
-      window.alert("Browser does not support direct SD card access.\nकृपया Chrome या Edge का इस्तेमाल करें।");
+      alert("Browser does not support direct SD card access.\nकृपया Chrome या Edge का इस्तेमाल करें।");
       return;
     }
 
@@ -152,9 +152,6 @@ export function useProgramActions(s: Deps) {
       );
       return;
     }
-
-    let writable: FileSystemWritableFileStream | null = null;
-    let metadataWritable: FileSystemWritableFileStream | null = null;
 
     try {
       const sourceDirectory = await ensureDirectoryAccess();
@@ -232,6 +229,7 @@ export function useProgramActions(s: Deps) {
 
       const metadataFileName = getProgramMetadataFilename(program);
 
+      let metadataWritable: FileSystemWritableFileStream | null = null;
       try {
         const metadataContent = buildProgramMetadataNote(program);
         const metadataHandle = await sdHandle.getFileHandle(metadataFileName, { create: true });
@@ -299,20 +297,6 @@ export function useProgramActions(s: Deps) {
         return;
       }
       console.error("❌ Copy to SD card failed", error);
-      if (writable) {
-        try {
-          await writable.abort();
-        } catch (abortError) {
-          console.warn("⚠️ Could not abort write stream", abortError);
-        }
-      }
-      if (metadataWritable) {
-        try {
-          await metadataWritable.abort();
-        } catch (abortMetadataError) {
-          console.warn("⚠️ Could not abort metadata write stream", abortMetadataError);
-        }
-      }
       setCopyStatuses((prev) => ({
         ...prev,
         [program.id]: { status: "error", progress: 0 },
@@ -334,7 +318,7 @@ export function useProgramActions(s: Deps) {
 
   const handleVerifySdCard = async (program: Program) => {
     if (!("showDirectoryPicker" in window)) {
-      window.alert("Browser does not support direct SD card access.\nकृपया Chrome या Edge का इस्तेमाल करें।");
+      alert("Browser does not support direct SD card access.\nकृपया Chrome या Edge का इस्तेमाल करें।");
       return;
     }
     if (program.isFileMissing) {
