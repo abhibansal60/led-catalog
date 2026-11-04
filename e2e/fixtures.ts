@@ -101,10 +101,11 @@ export const test = base.extend<Fixtures>({
   sync: async ({ page }, use) => {
     const sync = new SyncMock();
     await page.route("**/api/sync", async (route) => {
-      sync.posts.push(route.request().postDataJSON());
+      sync.posts.push({ method: route.request().method(), body: route.request().postData() });
       await route.fulfill({ status: sync.status, contentType: "application/json", body: "{}" });
     });
     await use(sync);
+    expect(sync.posts, "catalog data must never be uploaded to /api/sync").toEqual([]);
   },
 
   dialogs: async ({ page }, use) => {

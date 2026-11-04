@@ -37,12 +37,12 @@ const expectedRecord = (stored: any) => ({
   isFileMissing: false,
 });
 
-test("full export copies every LED file and writes catalog.json, then syncs it", async ({ page, fs, sync }) => {
+test("full export copies every LED file and writes catalog.json, without uploading it", async ({ page, fs, sync }) => {
   await seedCatalog(page, fs);
   await fs.pick("directory", "/backups");
   await exportCatalog(page, "Full export");
 
-  await expect(feedback(page)).toContainText("and synced online");
+  await expect(feedback(page)).toContainText("Export complete in local folder");
   const [folder] = await fs.list("/backups");
   expect(folder).toMatch(/^led-catalog-export-\d{4}-\d{2}-\d{2}T/);
   const dir = `/backups/${folder}`;
@@ -60,9 +60,7 @@ test("full export copies every LED file and writes catalog.json, then syncs it",
       { ...expectedRecord(byName("Wedding Arch")), exportedLedFileName: "arch.led" },
     ])
   );
-  expect(sync.posts).toEqual([
-    { exportedAt: catalog.exportedAt, programCount: 2, programs: catalog.programs },
-  ]);
+  expect(sync.posts).toEqual([]);
 });
 
 test("full export notes an LED file that vanished from the catalog folder", async ({ page, fs }) => {
@@ -83,17 +81,6 @@ test("full export notes an LED file that vanished from the catalog folder", asyn
   });
 });
 
-test("full export reports a failed sync but keeps the exported folder", async ({ page, fs, sync }) => {
-  await seedCatalog(page, fs);
-  sync.status = 500;
-  await fs.pick("directory", "/backups");
-  await exportCatalog(page, "Full export");
-
-  await expect(feedback(page)).toContainText("but online sync failed");
-  const [folder] = await fs.list("/backups");
-  expect(await fs.exists(`/backups/${folder}/catalog.json`)).toBe(true);
-});
-
 test("cancelling the full export folder picker writes and syncs nothing", async ({ page, fs, sync }) => {
   await seedCatalog(page, fs);
   await fs.pickFails("directory", "AbortError");
@@ -110,11 +97,11 @@ test("a blocked full export folder shows an error and syncs nothing", async ({ p
   await fs.pickFails("directory", "NotAllowedError");
   await exportCatalog(page, "Full export");
 
-  await expect(feedback(page)).toContainText("Export failed");
+  await expect(feedback(page)).toContainText("Local export failed");
   expect(sync.posts).toEqual([]);
 });
 
-test("quick JSON backup saves program metadata and posts the same payload to /api/sync", async ({
+test("quick JSON backup saves program metadata without uploading it", async ({
   page,
   fs,
   sync,
@@ -123,10 +110,10 @@ test("quick JSON backup saves program metadata and posts the same payload to /ap
   await fs.pick("save", "/downloads/");
   await exportCatalog(page, "Quick JSON backup");
 
-  await expect(feedback(page)).toContainText("and synced online");
+  await expect(feedback(page)).toContainText("saved locally");
   const [fileName] = await fs.list("/downloads");
   expect(fileName).toMatch(/^led-catalog-backup-.*\.json$/);
-  await expect(feedback(page)).toContainText(`saved as "${fileName}"`);
+  await expect(feedback(page)).toContainText(`saved locally as "${fileName}"`);
 
   const stored = await readStoredPrograms(page);
   const backup = await fs.readJson(`/downloads/${fileName}`);
@@ -134,9 +121,7 @@ test("quick JSON backup saves program metadata and posts the same payload to /ap
   expect(backup.programs).toEqual(
     expect.arrayContaining(stored.map((program) => ({ ...expectedRecord(program), exportedLedFileName: null })))
   );
-  expect(sync.posts).toEqual([
-    { exportedAt: backup.exportedAt, programCount: 2, programs: backup.programs },
-  ]);
+  expect(sync.posts).toEqual([]);
 
   const { calls } = await fs.state();
   expect(calls.at(-1)).toMatchObject({ kind: "save", options: { suggestedName: fileName } });

@@ -20,7 +20,7 @@
 - Program records and the catalog folder handle live in IndexedDB (`src/lib/storage.ts`, database `led-catalog`). A schema change bumps `DB_VERSION` and extends `onupgradeneeded`.
 - Old records lack newer fields, so new `StoredProgram` fields are optional and get defaults on read (`program.controller ?? DEFAULT_CONTROLLER`).
 - `.led` bytes live in the user-picked catalog folder; photos are data URLs (max 2 MB) inside the record.
-- Every export also POSTs the `ExportedProgramRecord` list, photos included, to `/api/sync`, which keeps one KV key (`latest-catalog`) and serves it on an unauthenticated GET. Treat every field you add to that record as public.
+- Exports write local files only. Never upload catalog records, photos or notes; the retired `/api/sync` endpoint must stay removed. The export Playwright specs assert that no request reaches it.
 
 ## File System Access
 
