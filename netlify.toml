@@ -1,0 +1,5 @@
+# Retired: the site is hosted on Cloudflare Pages. This tells the old Netlify site
+# (bansallights) to skip every build, so PRs no longer get public Netlify previews.
+# See led-catalog#39.
+[build]
+  ignore = "exit 0"
