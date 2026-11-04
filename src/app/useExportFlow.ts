@@ -31,52 +31,6 @@ export function useExportFlow(s: Deps) {
     setPrograms,
   } = s;
 
-  const syncCatalogMetadata = async (
-    metadata: { exportedAt: string; programCount: number },
-    exportedPrograms: ExportedProgramRecord[]
-  ): Promise<"skipped" | "success" | "error"> => {
-    const isHttpContext = typeof window !== "undefined" && window.location?.protocol !== "file:";
-
-    if (typeof fetch !== "function" || !isHttpContext) {
-      console.info("ℹ️ Skipping cloud sync in offline context");
-      return "skipped";
-    }
-
-    try {
-      const syncPayload = {
-        exportedAt: metadata.exportedAt,
-        programCount: metadata.programCount,
-        programs: exportedPrograms.map(({ notes, ...program }) => ({
-          ...program,
-          ...(notes ? { notes } : {}),
-        })),
-      };
-
-      const response = await fetch("/api/sync", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(syncPayload),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text().catch(() => "");
-        throw new Error(errorText || `Unexpected response status: ${response.status}`);
-      }
-
-      console.log("☁️ Catalog metadata synced to Cloudflare", {
-        exportedAt: metadata.exportedAt,
-        programCount: metadata.programCount,
-      });
-
-      return "success";
-    } catch (error) {
-      console.error("⚠️ Catalog metadata sync failed", error);
-      return "error";
-    }
-  };
-
   const handleExportCatalog = async (mode: "full" | "json") => {
     if (programs.length === 0) {
       setFeedback({
@@ -179,19 +133,9 @@ export function useExportFlow(s: Deps) {
         await metadataWritable.write(`${JSON.stringify(metadata, null, 2)}\n`);
         await metadataWritable.close();
 
-        const syncOutcome = await syncCatalogMetadata(metadata, exportedPrograms);
-
-        let feedbackMessage = `Export complete in folder "${folderName}". एक्सपोर्ट पूरा हुआ।`;
-
-        if (syncOutcome === "success") {
-          feedbackMessage = `Export complete in folder "${folderName}" and synced online. एक्सपोर्ट पूरा हुआ और डेटा ऑनलाइन सेव हो गया।`;
-        } else if (syncOutcome === "error") {
-          feedbackMessage = `Export complete in folder "${folderName}" but online sync failed. एक्सपोर्ट पूरा हुआ पर ऑनलाइन सिंक नहीं हो पाया।`;
-        }
-
         setFeedback({
           type: "success",
-          message: feedbackMessage,
+          message: `Export complete in local folder "${folderName}". स्थानीय फ़ोल्डर में एक्सपोर्ट पूरा हुआ।`,
         });
 
         console.log("📦 Catalog exported", { folderName, programCount: programs.length });
@@ -260,19 +204,9 @@ export function useExportFlow(s: Deps) {
         setTimeout(() => URL.revokeObjectURL(url), 1000);
       }
 
-      const syncOutcome = await syncCatalogMetadata(metadata, exportedPrograms);
-
-      let feedbackMessage = `Quick JSON backup saved as "${savedFileName}". JSON बैकअप सेव हुआ।`;
-
-      if (syncOutcome === "success") {
-        feedbackMessage = `Quick JSON backup saved as "${savedFileName}" and synced online. JSON बैकअप सेव हुआ और ऑनलाइन सिंक भी हो गया।`;
-      } else if (syncOutcome === "error") {
-        feedbackMessage = `Quick JSON backup saved as "${savedFileName}" but online sync failed. JSON बैकअप सेव हुआ पर ऑनलाइन सिंक नहीं हो पाया।`;
-      }
-
       setFeedback({
         type: "success",
-        message: feedbackMessage,
+        message: `Quick JSON backup saved locally as "${savedFileName}". JSON बैकअप स्थानीय फ़ाइल में सेव हुआ।`,
       });
 
       console.log("🧾 Catalog metadata exported", {
@@ -287,7 +221,7 @@ export function useExportFlow(s: Deps) {
       console.error("❌ Catalog export failed", error);
       setFeedback({
         type: "error",
-        message: "Export failed. एक्सपोर्ट नहीं हो पाया.",
+        message: "Local export failed. स्थानीय एक्सपोर्ट नहीं हो पाया.",
       });
     } finally {
       setExportInProgress(null);
@@ -345,7 +279,6 @@ export function useExportFlow(s: Deps) {
   };
 
   return {
-    syncCatalogMetadata,
     handleExportCatalog,
     handleClearAll,
   };

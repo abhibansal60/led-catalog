@@ -20,7 +20,7 @@ main: a push to main deploys straight to production, so work on a branch and ope
 
 ## What You Get
 - 📱 **Mobile-first interface** with large bilingual (English | हिंदी) labels and emoji cues.
-- 💾 **Offline catalog**: program records live in IndexedDB and the `.led` files in a folder you pick. Each export also sends the program list (photos and notes included) to `/api/sync`; see [Operational Notes](#operational-notes).
+- 💾 **Offline catalog**: program records live in IndexedDB and the `.led` files in a folder you pick. Exports save local files only; no catalog data is sent to a server.
 - 💳 **Format & Copy to SD Card**: wipes the card, writes `00_program.led`, and checks the copy byte for byte. **Verify SD Card** re-checks a card later.
 - 📥 **One-tap download** that always saves `00_program.led` for T-1000/T-8000 controllers, to copy to a card by hand.
 - 🌐 **Browser support**: everything that touches `.led` files (add, download, SD card, full export and import) needs the File System Access folder picker, so use desktop Chrome or Edge. Without it the app shows "Browser unsupported".
@@ -34,7 +34,7 @@ main: a push to main deploys straight to production, so work on a branch and ope
 | ---- | ------ | ----- |
 | UI | React 18 + TypeScript | SPA bootstrapped with Vite |
 | Styling | Tailwind CSS + shadcn-inspired primitives | Custom component variants live in `src/components/ui` |
-| State | React hooks + IndexedDB + File System Access API | `/api/sync` Pages Function stores the last export's metadata in Workers KV |
+| State | React hooks + IndexedDB + File System Access API | Local file exports and imports; no cloud sync |
 | Tooling | Vite 5 | Handles dev server and bundling; it transpiles TypeScript without typechecking |
 | Tests | `node:test` + Playwright | Unit tests for `src/lib`, end-to-end specs in `e2e/` |
 | Hosting | Cloudflare Pages (free tier) | Deployed by GitHub Actions workflow `deploy.yaml` with `wrangler pages deploy` |
@@ -58,7 +58,7 @@ main: a push to main deploys straight to production, so work on a branch and ope
    npm run preview
    ```
 
-`npm run dev` does not run the `/api/sync` Pages Function, so the sync step of an export fails locally and the export itself still completes.
+Exports work locally in development and production without a server connection.
 
 | Script | What it does |
 | ------ | ------------ |
@@ -73,13 +73,13 @@ main: a push to main deploys straight to production, so work on a branch and ope
 - Hosted on Cloudflare Pages at `https://led-catalog.pages.dev/` (or your custom domain).
 - Build command: `npm run build`
 - Output directory: `dist` (`pages_build_output_dir` in `wrangler.toml`)
-- `functions/api/sync.ts` deploys as a Pages Function, bound to the Workers KV namespace `CATALOG_DB` declared in `wrangler.toml`.
+- Static hosting only; no Pages Functions or KV bindings are needed.
 - SPA routing handled automatically by Cloudflare Pages.
 
 ### Continuous Deployment (GitHub Actions → Cloudflare Pages)
 Workflow file: `.github/workflows/deploy.yaml`
 
-1. Create a Cloudflare API token with the **Cloudflare Pages: Edit** and **Workers KV Storage: Read/Write** permissions.
+1. Create a Cloudflare API token with the **Cloudflare Pages: Edit** permission.
 2. In the GitHub repository, add secrets:
    - `CLOUDFLARE_API_TOKEN`: the token created above.
    - `CLOUDFLARE_ACCOUNT_ID`: the account ID for the Cloudflare tenant hosting the project.
@@ -151,7 +151,6 @@ Use Chrome or Edge on a computer; other browsers show “Browser unsupported”.
 │   ├── setup-ledit-windows.ps1 # Windows setup script for the LedEdit tool
 │   └── screenshot.png          # README image
 ├── e2e/                        # Playwright specs + in-memory File System Access fake
-├── functions/api/sync.ts       # Pages Function: keeps the last export in Workers KV
 ├── public/
 │   ├── manifest.json           # PWA metadata (name, colors, icons)
 │   └── service-worker.js       # Caches static assets for offline support
@@ -168,12 +167,12 @@ Use Chrome or Edge on a computer; other browsers show “Browser unsupported”.
 ├── CODING_STANDARDS.md         # Conventions for code and tests
 ├── tailwind.config.js          # Tailwind theme and shadcn tokens
 ├── vite.config.ts              # Vite config + build-time version stamp
-└── wrangler.toml               # Pages project name, output dir, KV binding
+└── wrangler.toml               # Pages project name, output dir
 ```
 
 ## Operational Notes
 - Program records live in the browser (IndexedDB) and `.led` files in the picked folder. Clearing browser data or switching devices requires export/import.
-- Every export POSTs the program list, photos and notes included, to `/api/sync`, which keeps only the latest one in Workers KV under `latest-catalog`. A GET on `/api/sync` returns it without sign-in, and the POST has no check either, so treat that copy as public (decision pending in issue #34).
+- Catalog data stays on the device and in explicit local exports. Keep a private full export before clearing browser data or moving devices; there is no cloud backup.
 - Rotate the Cloudflare API token on a regular cadence and update the GitHub secret.
 - Monitor Cloudflare Pages analytics (bandwidth/requests) monthly to ensure the project stays within the free tier.
 - Update this README, `AGENTS.md` and `docs/agents/deploy.md` whenever automation or operating practices change.
@@ -186,9 +185,9 @@ If the Cloudflare Pages project is deleted or the token expires, follow these st
    - Archive the output for safekeeping (attach to a GitHub Release if desired).
 2. **Create a fresh Cloudflare Pages project**
    - GitHub Actions uploads the build itself, so create a Direct Upload project rather than a Git-connected one: `npx wrangler pages project create led-catalog --production-branch=main`.
-   - If the KV namespace is gone too, create both (`npx wrangler kv namespace create CATALOG_DB` and the same with `--preview`) and put their ids in `wrangler.toml` (`id` and `preview_id`).
+   - Do not create a KV namespace or restore the retired `/api/sync` function.
 3. **Provision a new API token**
-   - Generate a token with **Cloudflare Pages: Edit** and **Workers KV Storage: Read/Write** permissions.
+   - Generate a token with **Cloudflare Pages: Edit** permission.
    - Update the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets in GitHub.
 4. **Trigger the pipeline**
    - Push an empty commit or retrigger the latest workflow run from the Actions tab.
